@@ -35,7 +35,7 @@ Users don't need the repository at all:
 docker run --rm -p 4318:4318 -p 5200:5200 ghcr.io/konradcinkusz/copilotscope:latest
 
 # Durable variant (Postgres + collector + dashboard) — download ONE file, no clone:
-curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/main/docker-compose.ghcr.yml
+curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
 docker compose -f docker-compose.ghcr.yml up
 ```
 
