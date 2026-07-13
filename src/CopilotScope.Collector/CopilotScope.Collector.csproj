@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CopilotScope.Collector</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The only external dependency is Npgsql (persistence). OTLP decoding is
+         implemented in-repo, everything else comes from the shared framework. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="8.0.5" />
+  </ItemGroup>
+
+</Project>

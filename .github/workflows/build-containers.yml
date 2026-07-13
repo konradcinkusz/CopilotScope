@@ -1,0 +1,62 @@
+# Builds and publishes the three CopilotScope images to GitHub Container Registry
+# on every push to main. Images become pullable at:
+#   ghcr.io/konradcinkusz/copilotscope            (all-in-one: collector in-memory + dashboard)
+#   ghcr.io/konradcinkusz/copilotscope-collector
+#   ghcr.io/konradcinkusz/copilotscope-dashboard
+#
+# Note: packages published by a workflow are private by default — flip them to
+# public once in GitHub → Packages → <package> → Settings → Change visibility,
+# so users can `docker pull` without authentication.
+name: build containers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: copilotscope
+            dockerfile: Dockerfile.allinone
+          - image: copilotscope-collector
+            dockerfile: Dockerfile
+          - image: copilotscope-dashboard
+            dockerfile: Dockerfile.dashboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

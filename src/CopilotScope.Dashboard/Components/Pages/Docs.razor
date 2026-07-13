@@ -1,0 +1,304 @@
+@page "/docs"
+
+<PageTitle>CopilotScope — Documentation</PageTitle>
+
+<header class="topbar">
+    <h1 class="brand">Copilot<span>Scope</span></h1>
+    <nav class="nav">
+        <a href="/">Sessions</a>
+        <a href="/overview">Overview</a>
+        <a href="/docs" class="active">Docs</a>
+    </nav>
+</header>
+
+<div class="doc">
+    <nav class="doc-toc">
+        <a href="/docs#model">Data model</a>
+        <a href="/docs#quality">Session quality</a>
+        <a href="/docs#turns">Turn analysis</a>
+        <a href="/docs#tiles">Tiles reference</a>
+        <a href="/docs#tokens">Token semantics</a>
+        <a href="/docs#insights">Insights</a>
+        <a href="/docs#algorithms">Algorithms</a>
+        <a href="/docs#transcript">Prompts &amp; responses</a>
+        <a href="/docs#overview">Overview page</a>
+        <a href="/docs#limits">Limitations</a>
+    </nav>
+
+    <section id="model" class="panel doc-section">
+        <h2>What CopilotScope measures — the data model</h2>
+        <p>
+            Copilot exports OpenTelemetry signals while you chat: <b>spans</b> (one <code>invoke_agent</code>
+            per turn, with child <code>chat</code> spans per model call and <code>execute_tool</code> spans per
+            tool run), <b>metrics</b> (edit acceptance, code survival, feedback, lines of code) and
+            <b>log events</b>. The collector groups everything by <code>gen_ai.conversation.id</code> into a
+            <b>session</b> — one session = one conversation. Signals that arrive without a conversation id
+            (typical for CLI metrics) are held in a temporary bucket and merged into the conversation the
+            moment it identifies itself.
+        </p>
+        <p>
+            By default only <b>metadata</b> flows: token counts, durations, tool names, error types. Prompt
+            and response text appears only when content capture is explicitly enabled on the client — see
+            <a href="/docs#transcript">Prompts &amp; responses</a>.
+        </p>
+    </section>
+
+    <section id="quality" class="panel doc-section">
+        <h2>Session quality — the composite score</h2>
+        <p>
+            The headline 0–100 number answers one question: <i>given everything the telemetry can see, how
+            well did this session go?</i> It is a weighted composition of six components. Two design
+            decisions matter more than the weights themselves:
+        </p>
+        <p>
+            <b>Only components with actual data enter the score.</b> A CLI session never emits edit or
+            feedback telemetry — punishing it (or padding it with a neutral value) would make every session
+            look the same. Missing components are shown greyed with a <i>prior</i> note but carry zero
+            weight; the remaining weights are renormalized. This is why two sessions can differ by 40
+            points instead of everything clustering at 80.
+        </p>
+        <p>
+            <b>Confidence is reported next to the score, never hidden inside it.</b>
+            <code>confidence = weight coverage × sample ramp</code> — a 91 at 15% confidence reads as
+            "early but promising", not "certain". Compare scores only at comparable confidence.
+        </p>
+        <table class="doc-table">
+            <thead><tr><th>Component</th><th>Weight</th><th>What it measures</th><th>Why it's in the score</th><th>Caveats</th></tr></thead>
+            <tbody>
+                <tr><td>reliability</td><td>0.25</td><td>Squared error-free rate over LLM and tool calls (LLM errors weigh double).</td><td>Failed calls are the most objective "this session went badly" signal telemetry has.</td><td>Squaring makes single errors in short sessions bite hard — check confidence.</td></tr>
+                <tr><td>acceptance</td><td>0.20</td><td>Accepted vs rejected edits (0.6) + code survival (0.4).</td><td>The closest proxy to "was the output actually useful".</td><td>Editor-only signal; always <i>prior</i> for CLI sessions.</td></tr>
+                <tr><td>friction</td><td>0.20</td><td>Mean turn score from the TFRA model below.</td><td>Connects the composite to <i>where</i> in the conversation things went wrong.</td><td>Needs at least one completed turn.</td></tr>
+                <tr><td>latency</td><td>0.15</td><td>TTFT p50 on a log-linear curve: ≤300&nbsp;ms → 1.0, ≥10&nbsp;s → 0.0.</td><td>Waiting is a real cost even when answers are correct.</td><td>Point estimate — the Latency-utility insight looks at the full distribution.</td></tr>
+                <tr><td>feedback</td><td>0.10</td><td>👍 / (👍 + 👎).</td><td>The only <i>explicit</i> human judgment in the stream.</td><td>Sparse — most people never click; VS Code only.</td></tr>
+                <tr><td>efficiency</td><td>0.10</td><td>Cache-hit ratio + turns-per-invocation sanity (≤8 healthy).</td><td>Detects context waste and agents that spiral.</td><td>Cache behavior is partly model-side, not user-controlled.</td></tr>
+            </tbody>
+        </table>
+        <p>Grades: ≥85 excellent · ≥70 good · ≥55 fair · ≥40 poor · below — critical. A session with no signals at all shows the neutral prior 70 at confidence 0%.</p>
+    </section>
+
+    <section id="turns" class="panel doc-section">
+        <h2>Turn analysis — TFRA</h2>
+        <p>
+            One <b>turn</b> = one <code>invoke_agent</code> trace: your message plus everything the agent
+            did to answer it. Each turn starts at 1.0 and collects <b>friction penalties</b>: LLM errors
+            (−0.35 each, capped), tool errors (−0.15 each, capped), latency outliers, and <b>repair
+            loops</b> — an unusual burst of tool calls combined with failures, the trace signature of an
+            agent retrying its way out of a hole (−0.10).
+        </p>
+        <p>
+            Latency is judged against <b>this session's own median</b>, not an absolute bar — a slow model
+            isn't punished for being slow, only turns that are slow <i>for this session</i>. The panel
+            highlights the best and worst turn <b>with reasons</b>, so "which part of this chat was good
+            and why" gets an explainable answer instead of a bare number.
+        </p>
+    </section>
+
+    <section id="tiles" class="panel doc-section">
+        <h2>Tiles reference</h2>
+        <table class="doc-table">
+            <thead><tr><th>Tile</th><th>Meaning &amp; how to read it</th><th>Source</th><th>Surfaces</th></tr></thead>
+            <tbody>
+                <tr><td>tokens in</td><td>Cumulative prompt tokens sent to the model across all LLM calls in the session. Includes cached tokens. See <a href="/docs#tokens">Token semantics</a> for why this is often surprisingly large.</td><td><code>gen_ai.usage.input_tokens</code></td><td>VS Code + CLI</td></tr>
+                <tr><td>tokens out</td><td>Generated text. Main driver of response time; pairs with the Token economics insight for cost.</td><td><code>gen_ai.usage.output_tokens</code></td><td>VS Code + CLI</td></tr>
+                <tr><td>cache read</td><td>Prompt tokens served from the model's cache — a subset of <i>tokens in</i>, not additional. High ratio = the session reuses context well and the model does less fresh computation.</td><td><code>gen_ai.usage.cache_read.*</code></td><td>VS Code + CLI, model-dependent</td></tr>
+                <tr><td>net compute</td><td>Tokens actually processed fresh: <code>tokens in − cache read</code>. This is the number that drives real GPU compute — the rest was served from cache. For typical agentic sessions with large workspace context, this is far smaller than <i>tokens in</i>.</td><td>Derived</td><td>VS Code + CLI</td></tr>
+                <tr><td>TTFT p50 / p95</td><td>Median and tail wait before the first token. Under ~1&nbsp;s feels instant, over 2&nbsp;s breaks flow. Good p50 with a bad p95 = occasional stalls.</td><td><code>time_to_first_token</code> (copilot_chat.* / github.copilot.*)</td><td>VS Code + CLI</td></tr>
+                <tr><td>LLM calls</td><td>Model invocations; one turn often makes several. ✗ = failed calls (rate limits, timeouts) — these feed <i>reliability</i>.</td><td><code>chat</code> spans</td><td>VS Code + CLI</td></tr>
+                <tr><td>tool calls</td><td>File reads/edits, terminal commands, searches the agent performed. Many tools per chat call inside one turn can indicate a repair loop.</td><td><code>execute_tool</code> spans</td><td>VS Code + CLI</td></tr>
+                <tr><td>turns / invocations</td><td>Conversation turns vs agent invocations. A high ratio means the agent needed a lot of back-and-forth per request.</td><td><code>invoke_agent</code> + <code>turn_count</code></td><td>VS Code + CLI</td></tr>
+                <tr><td>edits ✓/✗</td><td>Suggested edits you kept vs discarded — the most direct usefulness signal telemetry has.</td><td><code>edit.acceptance</code> metrics</td><td><b>VS Code only</b> — stays 0 for CLI</td></tr>
+                <tr><td>feedback 👍/👎</td><td>Your explicit thumbs clicks in the chat UI.</td><td><code>user.feedback</code></td><td><b>VS Code only</b> — the CLI has no buttons</td></tr>
+                <tr><td>lines of code</td><td>Lines added/removed by accepted suggestions.</td><td><code>lines_of_code</code> metric</td><td><b>VS Code only</b></td></tr>
+            </tbody>
+        </table>
+        <p>Tiles that a surface cannot emit stay at 0 <b>and are excluded from the quality score</b> — a CLI session is judged on what it did produce, not punished for editor-only signals.</p>
+    </section>
+
+    <section id="tokens" class="panel doc-section">
+        <h2>Token semantics — why the numbers look large</h2>
+        <h3>These are not your subscription billing counters</h3>
+        <p>
+            GitHub Copilot is a <b>flat subscription</b>. You are not billed per token and there is no
+            per-token invoice. The token counts here come from OpenTelemetry spans emitted by the Copilot
+            client and reflect the raw LLM usage underneath — they are a <i>technical instrument</i>
+            for understanding your workflow, not an accounting record.
+        </p>
+        <h3>Why "tokens in" is cumulative — and often large</h3>
+        <p>
+            Every time Copilot calls the model (one <code>chat</code> span = one LLM call), it sends the
+            <b>full prompt from scratch</b>: system instructions, workspace context, open files, the entire
+            conversation history up to that point, plus any tool results from earlier in the same turn.
+            There is no "delta" protocol — the model receives the full context every time.
+        </p>
+        <p>
+            In agent mode a single user message can trigger 5–10 internal LLM calls. If each call carries
+            40&nbsp;000 tokens of context (a typical workspace prompt), that one turn produces
+            200&nbsp;000–400&nbsp;000 cumulative input tokens on the dashboard — even though from your
+            perspective it was a "quick" question. The tile shows the running sum over all LLM calls in the
+            session, so it grows with every call, not just with the length of your message.
+        </p>
+        <h3>What cache read means — and why it makes the total look even bigger</h3>
+        <p>
+            <code>gen_ai.usage.input_tokens</code> counts <b>all</b> input tokens including those served from
+            cache. <code>gen_ai.usage.cache_read.input_tokens</code> is a <b>subset</b> of that total, not an
+            addition to it. A session showing 200&nbsp;k tokens in / 183&nbsp;k cache read means:
+        </p>
+        <ul>
+            <li>200&nbsp;000 total tokens were submitted as input across all LLM calls.</li>
+            <li>183&nbsp;000 of those (91.5%) were served instantly from the model's prompt cache — no GPU computation, negligible cost.</li>
+            <li>Only 17&nbsp;000 tokens (8.5%) were actually processed fresh. That is the <b>net compute</b> tile.</li>
+        </ul>
+        <p>
+            A high cache-read ratio is a <i>good sign</i>: it means the large, stable parts of the prompt
+            (system instructions, repository context) are being reused efficiently across calls. A low ratio
+            on a long session may indicate context fragmentation or frequent context resets.
+        </p>
+        <h3>What can and cannot be computed from OTel telemetry</h3>
+        <table class="doc-table">
+            <thead><tr><th>Question</th><th>Computable?</th><th>How</th></tr></thead>
+            <tbody>
+                <tr><td>Total tokens sent to the model this session</td><td>✅ yes</td><td><code>tokens in</code> — sum of <code>gen_ai.usage.input_tokens</code> across all chat spans</td></tr>
+                <tr><td>Tokens actually freshly computed (GPU work)</td><td>✅ yes</td><td><code>net compute</code> = <code>tokens in − cache read</code></td></tr>
+                <tr><td>Tokens generated by the model</td><td>✅ yes</td><td><code>tokens out</code> = <code>gen_ai.usage.output_tokens</code></td></tr>
+                <tr><td>How much of my subscription I have used</td><td>❌ no</td><td>Copilot subscriptions have no per-token quota visible in OTel; use the GitHub usage dashboard for that</td></tr>
+                <tr><td>My actual invoice cost</td><td>❌ no</td><td>Token economics uses public list prices as a proxy for relative comparison, not for accounting</td></tr>
+                <tr><td>Tokens in my actual typed message</td><td>❌ no</td><td>The OTel span carries the total prompt (system + history + message), not individual parts</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section id="insights" class="panel doc-section">
+        <h2>Insights — the algorithm reports</h2>
+        <p>
+            Each insight is an independent analyzer implementing one published evaluation approach
+            (the full survey of ten candidates lives in <code>docs/ANALYSIS.md</code>). They are
+            deliberately separate from the composite score: the score answers "how did it go", insights
+            answer "what exactly happened and what does it cost".
+        </p>
+
+        <h3>Edit survival</h3>
+        <p>
+            <b>Why it exists:</b> acceptance alone lies — you can accept a suggestion and rewrite 90% of it
+            a minute later. Survival measures what still exists after the observation window.
+            <b>Why no-revert is weighted higher (0.6 vs 0.4):</b> low four-gram overlap can mean legitimate
+            refactoring of surviving code, while a revert is unambiguous rejection.
+            <b>Objection to keep in mind:</b> survival windows are short (30/300&nbsp;s) — long-term code churn
+            is invisible to it.
+        </p>
+
+        <h3>Throughput</h3>
+        <p>
+            <b>Why it exists:</b> raw "lines generated" rewards verbosity. Discounting by the acceptance
+            ratio and normalizing per turn yields <i>effective</i> throughput — accepted work per unit of
+            interaction. <b>Objection:</b> LOC is a notoriously gameable productivity metric; treat it as a
+            session-shape descriptor, never as a performance KPI for people.
+        </p>
+
+        <h3>Latency utility</h3>
+        <p>
+            <b>Why it exists:</b> the score's latency component compresses everything into p50 — one number
+            can hide a terrible tail. Here the utility curve is applied to <i>every</i> sample, plus two
+            HCI-grounded risk buckets: responses over 2&nbsp;s (attention degrades, users task-switch) and
+            over 8&nbsp;s (high abandonment risk). <b>Objection:</b> thresholds come from general
+            interaction research, not Copilot-specific studies; calibrate against your own tolerance.
+        </p>
+
+        <h3>Token economics</h3>
+        <p>
+            <b>Why it exists at all in a subscription product</b> — the most common objection, so here is
+            the full rationale: (1)&nbsp;<i>relative comparison</i> — dollars are the only unit that lets
+            you compare a 50k-token gpt-4o-mini session with a 5k-token claude-opus session on one axis;
+            (2)&nbsp;<i>context-bloat detection</i> — "large context, near-zero cache reuse" is a concrete,
+            fixable workflow smell that raw token counts don't surface; (3)&nbsp;<i>cache ROI</i> — cache
+            savings in dollars show whether your session structure exploits prompt caching;
+            (4)&nbsp;<i>unit economics</i> — cost per accepted edit is the closest thing to "price of a unit
+            of useful work". <b>Objections, stated honestly:</b> prices are list-price estimates from a
+            configurable sheet (<code>CopilotScope:Pricing</code>), not your invoice; Copilot subscriptions
+            abstract real costs entirely; per-model attribution assumes span-level token counts are
+            complete. Use it for comparisons, never for accounting.
+        </p>
+
+        <h3>Frustration signals</h3>
+        <p>
+            <b>Why it exists:</b> the telemetry sees errors and latency, but not <i>your</i> experience — a
+            session can be technically clean and still infuriating. When content capture is on, four
+            transparent signals per user message approximate it: a bilingual (EN/PL) weighted lexicon,
+            <b>rephrasing detection</b> (Jaccard similarity with your previous message — asking the same
+            thing again is the classic repair signal), sustained CAPS / punctuation bursts, and short
+            corrective replies. <b>Why it is report-only and outside the score:</b> lexicons produce false
+            positives ("no worries"), are sarcasm-blind and language-biased. Every flag therefore carries
+            its reasons for human review. The upgrade path is a learned-rubric approach (SPUR) once an LLM
+            budget is acceptable.
+        </p>
+    </section>
+
+    <section id="algorithms" class="panel doc-section">
+        <h2>Algorithm implementation matrix</h2>
+        <p>
+            Ten session-quality evaluation approaches were surveyed before building the scoring layer
+            (full survey with sources: <code>docs/ANALYSIS.md</code> in the repository). Current status
+            of each:
+        </p>
+        <table class="doc-table">
+            <thead><tr><th>#</th><th>Algorithm</th><th>Status</th><th>Where / why not</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td>LLM-as-a-Judge (G-Eval)</td><td>❌ not implemented</td><td>Requires a judge model, conversation content and a token budget.</td></tr>
+                <tr><td>2</td><td>SPUR (learned satisfaction rubrics)</td><td>❌ not implemented</td><td>Requires an LLM plus labeled training sessions; the designated upgrade path for frustration detection.</td></tr>
+                <tr><td>3</td><td>RAG component metrics (RAGAS)</td><td>❌ not implemented</td><td>Applies to retrieval-grounded sessions; requires content.</td></tr>
+                <tr><td>4</td><td>Edit Survival Analysis</td><td>✅ full</td><td><code>EditSurvivalAnalyzer</code> — four-gram and no-revert tracked separately (0.4/0.6); also feeds the <i>acceptance</i> component.</td></tr>
+                <tr><td>5</td><td>Acceptance-weighted throughput</td><td>✅ full</td><td><code>ThroughputAnalyzer</code> — accepted LOC per turn, LOC per 1k output tokens, rejection-discounted.</td></tr>
+                <tr><td>6</td><td>TFRA — turn-level friction &amp; repair</td><td>✅ full</td><td><code>SegmentAnalyzer</code> (Turn analysis panel) + the <i>friction</i> component of the composite score.</td></tr>
+                <tr><td>7</td><td>Latency-utility model</td><td>✅ full</td><td><code>LatencyUtilityAnalyzer</code> — per-sample utility curve, 2&nbsp;s / 8&nbsp;s attention-risk buckets; simplified form remains the <i>latency</i> component.</td></tr>
+                <tr><td>8</td><td>Token &amp; cache economics</td><td>✅ full</td><td><code>TokenEconomicsAnalyzer</code> — per-model cost from a configurable price sheet, cache savings, cost per turn / accepted edit.</td></tr>
+                <tr><td>9</td><td>Frustration classification</td><td>✅ simplified</td><td><code>FrustrationAnalyzer</code> — EN/PL lexicon + rephrasing similarity + typography; report-only, deliberately outside the composite score.</td></tr>
+                <tr><td>10</td><td>Task-completion detection</td><td>❌ not implemented</td><td>Needs completion signals (builds, tests) that Copilot telemetry does not carry.</td></tr>
+            </tbody>
+        </table>
+        <p>
+            The <i>reliability</i> and <i>feedback</i> components sit outside this list — they are direct
+            signals rather than algorithms. Analyzers 4–9 run as a pluggable pipeline
+            (<code>IInsightAnalyzer</code>): adding an algorithm is one class plus one DI registration,
+            with zero UI work, and a failing analyzer degrades to an error report instead of breaking
+            the panel.
+        </p>
+    </section>
+
+    <section id="transcript" class="panel doc-section">
+        <h2>Prompts &amp; responses</h2>
+        <p>
+            Empty by design unless <b>content capture</b> is enabled on the client:
+            <code>"github.copilot.chat.otel.captureContent": true</code> in VS Code, or
+            <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code> for the CLI
+            (note: <code>COPILOT_OTEL_CAPTURE_CONTENT</code> does not exist). Captured text is stored in
+            the session snapshot — last 100 exchanges, 4&nbsp;000 characters each — enough to review a
+            session, deliberately not a verbatim archive. The conversation view is read-only and parses the
+            raw JSON message arrays into role-tagged bubbles. Treat this as sensitive: on shared or company
+            machines keep capture off unless it has been explicitly approved.
+        </p>
+    </section>
+
+    <section id="overview" class="panel doc-section">
+        <h2>Overview page</h2>
+        <p>
+            Cross-session aggregates: total token burn (the hero tiles), tokens per day for the last 14
+            active days, calls per model, and the top sessions by token consumption. <b>Avg quality</b> is
+            a plain mean of session scores — check individual confidences before reading much into it; a
+            mean of three low-confidence sessions is mostly noise.
+        </p>
+    </section>
+
+    <section id="limits" class="panel doc-section">
+        <h2>Honest limitations</h2>
+        <p>
+            <b>Surface gaps:</b> Visual Studio (the full IDE) and JetBrains plugins export no OTel at all —
+            those sessions simply don't exist here. CLI sessions lack all editor signals (edits, feedback,
+            LOC). <b>Attribution:</b> with several parallel conversations in one CLI process,
+            identity-less metrics attach to the most recently active one — the telemetry carries nothing
+            better. <b>Gameability:</b> every input is client-emitted telemetry; the bundled demo generator
+            proves a perfect session can be fabricated in seconds. These numbers are a mirror for your own
+            workflow, not evidence about people. <b>Scores are estimates:</b> weights and thresholds encode
+            reasonable defaults, not ground truth — the pipeline is pluggable precisely so you can disagree
+            with one class at a time.
+        </p>
+    </section>
+</div>
