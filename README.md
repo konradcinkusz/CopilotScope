@@ -27,7 +27,7 @@ VS Code / Copilot CLI     │  Collector :4318 ──▶ Postgres (container + v
 
 ## Quick start — no clone, just pull
 
-Every push to `main` publishes three images to GHCR (see `.github/workflows/build-containers.yml`).
+Each GitHub release publishes three images to GHCR (see `.github/workflows/build-containers.yml`).
 Users don't need the repository at all:
 
 ```bash

@@ -1,8 +1,13 @@
 # Builds and publishes the three CopilotScope images to GitHub Container Registry
-# on every push to main. Images become pullable at:
+# when a release tag is pushed (e.g. v1.0.0). Create a release via GitHub UI —
+# that automatically creates the tag and triggers this workflow. Images:
 #   ghcr.io/konradcinkusz/copilotscope            (all-in-one: collector in-memory + dashboard)
 #   ghcr.io/konradcinkusz/copilotscope-collector
 #   ghcr.io/konradcinkusz/copilotscope-dashboard
+#
+# Each release produces three image tags: the version (e.g. v1.0.0), major.minor
+# (e.g. v1.0) and latest. The workflow_dispatch trigger allows a manual re-run
+# from the Actions tab without pushing a new tag.
 #
 # Note: packages published by a workflow are private by default — flip them to
 # public once in GitHub → Packages → <package> → Settings → Change visibility,
@@ -11,7 +16,8 @@ name: build containers
 
 on:
   push:
-    branches: [master]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 env:
@@ -49,8 +55,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
-            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v6
