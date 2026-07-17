@@ -32,7 +32,8 @@ public sealed record PersistedSession(
     List<PersistedTurn> TurnStats,
     List<double>? SurvivalFourGram = null,
     List<double>? SurvivalNoRevert = null,
-    Dictionary<string, PersistedModelStat>? ModelUsage = null)
+    Dictionary<string, PersistedModelStat>? ModelUsage = null,
+    EmitterKind EmitterKind = EmitterKind.Unknown)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -56,7 +57,8 @@ public sealed record PersistedSession(
         new List<double>(x.SurvivalFourGram),
         new List<double>(x.SurvivalNoRevert),
         x.ModelUsage.ToDictionary(kv => kv.Key, kv => new PersistedModelStat(
-            kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens))));
+            kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens)),
+        x.EmitterKind));
 
     public CopilotSession ToSession()
     {
@@ -64,6 +66,7 @@ public sealed record PersistedSession(
         {
             Id = Id,
             VsCodeSessionId = VsCodeSessionId,
+            EmitterKind = EmitterKind,
             AgentName = AgentName,
             Repository = Repository,
             Branch = Branch,

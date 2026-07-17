@@ -156,4 +156,27 @@ public sealed class QualityEngine
 
 public sealed record QualityComponent(string Name, double Weight, double Value, int Samples, string Detail);
 
-public sealed record QualityReport(double Score, double Confidence, string Grade, IReadOnlyList<QualityComponent> Components);
+public sealed record QualityReport(
+    double Score,
+    double Confidence,
+    string Grade,
+    IReadOnlyList<QualityComponent> Components,
+    /// <summary>0–1 percentile rank vs. recent sessions (null when history is too short for comparison).</summary>
+    double? PercentileRank = null,
+    int? HistoryCount = null,
+    double? HistoryMean = null,
+    double? HistoryStdDev = null)
+{
+    /// <summary>z-score relative to the history window (null when HistoryStdDev is zero or unavailable).</summary>
+    public double? ZScore =>
+        HistoryMean is { } mu && HistoryStdDev is > 0 ? (Score - mu) / HistoryStdDev : null;
+
+    /// <summary>Human-readable relative label ("above baseline", "at baseline", "below baseline").</summary>
+    public string? RelativeGrade => PercentileRank switch
+    {
+        >= 0.75 => "above baseline",
+        >= 0.35 => "at baseline",
+        < 0.35 => "below baseline",
+        _ => null
+    };
+}

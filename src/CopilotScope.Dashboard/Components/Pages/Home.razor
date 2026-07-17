@@ -75,12 +75,16 @@
                 <div class="panel-head">
                     <div>
                         <div class="panel-label">Session quality</div>
-                        <div class="vu-score grade-@q.Grade">@q.Score.ToString("0.0") <small>/ 100 · @q.Grade · confidence @((q.Confidence * 100).ToString("0"))%</small></div>
+                        <div class="vu-score @RelativeGradeClass(q)">@q.Score.ToString("0.0") <small>@QualitySubtitle(q)</small></div>
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
                         @{ var status = SessionStatus(s); }
                         <span class="status-chip status-@status.Css">@status.Label</span>
+                        @if (s.EmitterKind != EmitterKind.Unknown)
+                        {
+                            <span class="status-chip emitter-@s.EmitterKind.ToString().ToLower()">@EmitterLabel(s.EmitterKind)</span>
+                        }
                         @if (_confirmDelete)
                         {
                             <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
@@ -92,13 +96,22 @@
                         }
                     </div>
                 </div>
-                <div class="vu">
+                <div class="vu" title="@(q.PercentileRank.HasValue ? $"Raw score {q.Score:0.0}/100 · {(int)(q.PercentileRank.Value * 100)}th percentile vs last {q.HistoryCount} sessions" : $"Raw score {q.Score:0.0}/100")">
                     @for (var i = 0; i < 40; i++)
                     {
                         var lit = q.Score / 100.0 * 40 > i;
-                        <span class="vu-seg @(lit ? SegClass(i) : "")"></span>
+                        // When history available, the mean marker segment gets a distinct style
+                        var isMean = q.HistoryMean.HasValue && Math.Abs(q.HistoryMean.Value / 100.0 * 40 - i) < 0.5;
+                        <span class="vu-seg @(lit ? SegClass(i) : "") @(isMean && !lit ? "vu-mean" : "")"></span>
                     }
                 </div>
+                @if (q.PercentileRank.HasValue && q.HistoryCount >= 3)
+                {
+                    <div class="percentile-bar">
+                        <div class="percentile-fill" style="width:@(Pct(q.PercentileRank.Value))%"></div>
+                        <span class="percentile-label">@((int)(q.PercentileRank.Value * 100))th pct vs @q.HistoryCount sessions</span>
+                    </div>
+                }
                 @{ var worst = WorstComponent(q); }
                 @if (worst is not null)
                 {
@@ -110,13 +123,15 @@
                 <div class="components">
                     @foreach (var c in q.Components)
                     {
-                        <div class="component">
+                        // Certain factors are VS Code–only; mark them clearly for CLI sessions
+                        var isCliNa = IsCli(s) && c.Samples == 0 && c.Name is "acceptance" or "feedback";
+                        <div class="component @(isCliNa ? "component-na" : "")">
                             <div class="component-head">
-                                <span><span class="dot dot-@TrafficClass(c)"></span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
-                                <span>@((c.Value * 100).ToString("0"))</span>
+                                <span><span class="dot dot-@(isCliNa ? "unknown" : TrafficClass(c))"></span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
+                                <span>@(isCliNa ? "—" : (c.Value * 100).ToString("0"))</span>
                             </div>
-                            <div class="bar"><span style="width:@(Pct(c.Value))%"></span></div>
-                            <div class="component-detail">@c.Detail@(c.Samples == 0 ? " · prior" : "")</div>
+                            @if (!isCliNa) { <div class="bar"><span style="width:@(Pct(c.Value))%"></span></div> }
+                            <div class="component-detail">@(isCliNa ? "not emitted by CLI" : c.Detail + (c.Samples == 0 ? " · prior" : ""))</div>
                         </div>
                     }
                 </div>
@@ -132,9 +147,12 @@
                 <div class="tile" data-tip="How many times the model was called (one turn often makes several). ✗ counts failed calls — rate limits, timeouts. (VS Code + CLI)" tabindex="0"><b>@s.ChatCalls<i>@(s.ChatErrors > 0 ? $" ({s.ChatErrors}✗)" : "")</i></b><span>LLM calls</span></div>
                 <div class="tile" data-tip="Tool executions the agent performed: file reads/edits, terminal commands, searches. ✗ counts tool failures. (VS Code + CLI)" tabindex="0"><b>@s.ToolCalls<i>@(s.ToolErrors > 0 ? $" ({s.ToolErrors}✗)" : "")</i></b><span>tool calls</span></div>
                 <div class="tile" data-tip="Conversation turns vs agent invocations. Many turns per invocation can mean the agent needed a lot of back-and-forth to finish. (VS Code + CLI)" tabindex="0"><b>@s.Turns / @s.AgentInvocations</b><span>turns / invocations</span></div>
-                <div class="tile" data-tip="Suggested edits you kept (✓) vs threw away (✗) — the most direct 'was it useful' signal. Editor-only: VS Code emits this, the CLI does not, so it stays 0 for CLI sessions." tabindex="0"><b>@s.EditsAccepted✓ @s.EditsRejected✗</b><span>edits</span></div>
-                <div class="tile" data-tip="Your explicit thumbs up/down clicks in the chat UI. VS Code only — the CLI has no feedback buttons, so this stays 0 for CLI sessions." tabindex="0"><b>👍@s.ThumbsUp 👎@s.ThumbsDown</b><span>feedback</span></div>
-                <div class="tile" data-tip="Lines of code added/removed by accepted suggestions. VS Code only — not emitted by the CLI." tabindex="0"><b>+@s.LinesAdded.ToString("0") −@s.LinesRemoved.ToString("0")</b><span>lines of code</span></div>
+                @if (!IsCli(s))
+                {
+                    <div class="tile" data-tip="Suggested edits you kept (✓) vs threw away (✗) — the most direct 'was it useful' signal. Editor-only: VS Code emits this, the CLI does not." tabindex="0"><b>@s.EditsAccepted✓ @s.EditsRejected✗</b><span>edits</span></div>
+                    <div class="tile" data-tip="Your explicit thumbs up/down clicks in the chat UI. VS Code only — the CLI has no feedback buttons." tabindex="0"><b>👍@s.ThumbsUp 👎@s.ThumbsDown</b><span>feedback</span></div>
+                    <div class="tile" data-tip="Lines of code added/removed by accepted suggestions. VS Code only — not emitted by the CLI." tabindex="0"><b>+@s.LinesAdded.ToString("0") −@s.LinesRemoved.ToString("0")</b><span>lines of code</span></div>
+                }
             </div>
 
             <div class="panel">
@@ -145,20 +163,74 @@
                 }
                 else
                 {
+                    @{ var allClean = _detail.Turns.Turns.All(t => t.Score >= 1.0); }
+                    @{ var hasIssues = _detail.Turns.Turns.Where(t => t.Score < 1.0).ToList(); }
+
                     <div class="findings">
                         @foreach (var f in _detail.Turns.Findings)
                         {
                             <div class="finding">@f</div>
                         }
                     </div>
-                    @foreach (var t in _detail.Turns.Turns)
+
+                    @if (allClean)
                     {
-                        <div class="turn-row @(t.Index == _detail.Turns.BestIndex ? "best" : "") @(t.Index == _detail.Turns.WorstIndex ? "worst" : "")">
-                            <span class="turn-idx">#@(t.Index + 1)</span>
-                            <div class="bar wide"><span style="width:@(Pct(t.Score))%"></span></div>
-                            <span class="turn-score">@((t.Score * 100).ToString("0"))</span>
-                            <span class="turn-reasons">@string.Join(" · ", t.Reasons)</span>
+                        <div class="turns-clean-banner">
+                            <span class="dot dot-good"></span>
+                            @_detail.Turns.Turns.Count turn@(_detail.Turns.Turns.Count == 1 ? "" : "s") · all clean
+                            <button class="btn btn-sm turns-toggle" @onclick="() => _showAllTurns = !_showAllTurns">
+                                @(_showAllTurns ? "hide ▲" : "show all ▼")
+                            </button>
                         </div>
+                        @if (_showAllTurns)
+                        {
+                            <div class="turns-list">
+                                @foreach (var t in _detail.Turns.Turns)
+                                {
+                                    <div class="turn-row turn-row-compact">
+                                        <span class="turn-idx">#@(t.Index + 1)</span>
+                                        <span class="turn-reasons">@string.Join(" · ", t.Reasons)</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        @* Show problematic turns prominently *@
+                        @foreach (var t in hasIssues.OrderBy(t => t.Score))
+                        {
+                            <div class="turn-row @(t.Index == _detail.Turns.WorstIndex ? "worst" : "")">
+                                <span class="turn-idx">#@(t.Index + 1)</span>
+                                <div class="bar wide"><span style="width:@(Pct(t.Score))%"></span></div>
+                                <span class="turn-score">@((t.Score * 100).ToString("0"))</span>
+                                <span class="turn-reasons">@string.Join(" · ", t.Reasons)</span>
+                            </div>
+                        }
+
+                        @{ var cleanCount = _detail.Turns.Turns.Count - hasIssues.Count; }
+                        @if (cleanCount > 0)
+                        {
+                            <div class="turns-clean-banner">
+                                <span class="dot dot-good"></span>
+                                @cleanCount clean turn@(cleanCount == 1 ? "" : "s") with no issues
+                                <button class="btn btn-sm turns-toggle" @onclick="() => _showAllTurns = !_showAllTurns">
+                                    @(_showAllTurns ? "hide ▲" : "show all ▼")
+                                </button>
+                            </div>
+                            @if (_showAllTurns)
+                            {
+                                <div class="turns-list">
+                                    @foreach (var t in _detail.Turns.Turns.Where(t => t.Score >= 1.0))
+                                    {
+                                        <div class="turn-row turn-row-compact @(t.Index == _detail.Turns.BestIndex ? "best" : "")">
+                                            <span class="turn-idx">#@(t.Index + 1)</span>
+                                            <span class="turn-reasons">@string.Join(" · ", t.Reasons)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
                     }
                 }
             </div>
@@ -299,7 +371,7 @@
                             </div>
                             <button class="btn" @onclick="() => _showChat = false">Close ✕</button>
                         </div>
-                        <div class="chat-scroll">
+                        <div class="chat-scroll" @ref="_chatScrollRef">
                             @foreach (var entry in _detail.Transcript)
                             {
                                 <div class="turn-sep">@entry.Time.ToLocalTime().ToString("HH:mm:ss") · @entry.Model@(entry.Turn >= 0 ? $" · turn {entry.Turn + 1}" : "")</div>

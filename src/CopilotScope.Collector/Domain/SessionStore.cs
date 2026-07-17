@@ -95,6 +95,7 @@ public sealed class SessionStore
 
         session.Apply(s =>
         {
+            if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(span.Resource);
             if (span.Attr(Sem.AgentName) is { } agent) s.AgentName = agent;
             if (span.Attr(Sem.GitRepository) is { } repo) s.Repository = repo;
             if (span.Attr(Sem.GitBranch) is { } branch) s.Branch = branch;
@@ -331,6 +332,13 @@ public sealed class SessionStore
         var svc = resource.TryGetValue(Sem.ServiceName, out var name) ? name.ToString() : null;
         if (resource.TryGetValue("process.pid", out var pid) && svc is not null) return $"proc:{svc}:{pid}";
         return svc is not null ? $"svc:{svc}" : null;
+    }
+
+    private static EmitterKind DetectEmitter(Dictionary<string, AttrValue> resource)
+    {
+        if (resource.ContainsKey(Sem.SessionId)) return EmitterKind.VSCode;
+        if (resource.ContainsKey("process.pid")) return EmitterKind.CLI;
+        return EmitterKind.Unknown;
     }
 
     private void RegisterResource(string fingerprint, string conversationId, Dictionary<string, AttrValue> resource)

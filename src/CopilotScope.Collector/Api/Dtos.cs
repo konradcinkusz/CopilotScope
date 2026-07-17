@@ -14,7 +14,8 @@ public sealed record SessionSummaryDto(
     double TtftP50Ms, double TtftP95Ms,
     Dictionary<string, int> Models,
     QualityReport Quality,
-    SessionKind Kind);
+    SessionKind Kind,
+    EmitterKind EmitterKind = EmitterKind.Unknown);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -105,9 +106,18 @@ public static class DtoOverview
 
 public static class Dto
 {
-    public static SessionSummaryDto Summary(CopilotSession s, QualityEngine quality)
+    public static SessionSummaryDto Summary(CopilotSession s, QualityEngine quality, IReadOnlyList<double>? allScores = null)
     {
         var report = quality.Evaluate(s);
+        if (allScores is { Count: >= 3 })
+        {
+            var sorted = allScores.OrderBy(x => x).ToList();
+            var rank = (double)sorted.Count(x => x <= report.Score) / sorted.Count;
+            var mean = sorted.Average();
+            var stddev = Math.Sqrt(sorted.Average(x => (x - mean) * (x - mean)));
+            report = report with { PercentileRank = rank, HistoryCount = sorted.Count, HistoryMean = Math.Round(mean, 1), HistoryStdDev = Math.Round(stddev, 2) };
+        }
+
         return s.Snapshot(x => new SessionSummaryDto(
             x.Id, x.AgentName, Anonymize(x.Repository), x.Branch,
             x.FirstSeen, x.LastSeen,
@@ -119,12 +129,13 @@ public static class Dto
             CopilotSession.Percentile(x.TtftMs, 0.5), CopilotSession.Percentile(x.TtftMs, 0.95),
             new Dictionary<string, int>(x.ModelCalls),
             report,
-            SessionClassifier.Classify(x)));
+            SessionClassifier.Classify(x),
+            x.EmitterKind));
     }
 
-    public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights)
+    public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights, IReadOnlyList<double>? allScores = null)
     {
-        var summary = Summary(s, quality);
+        var summary = Summary(s, quality, allScores);
         var turns = SegmentAnalyzer.Analyze(s);
         var reports = insights.Analyze(s);
         return s.Snapshot(x => new SessionDetailDto(

@@ -8,6 +8,8 @@ namespace CopilotScope.Collector.Domain;
 /// falling back to the VS Code window session.id). Thread-safe via its own lock;
 /// snapshots are taken for the API / SignalR layer.
 /// </summary>
+public enum EmitterKind { Unknown, VSCode, CLI }
+
 public sealed class CopilotSession
 {
     private readonly object _lock = new();
@@ -16,6 +18,7 @@ public sealed class CopilotSession
 
     public required string Id { get; init; }
     public string? VsCodeSessionId { get; set; }
+    public EmitterKind EmitterKind { get; set; } = EmitterKind.Unknown;
     public string? AgentName { get; set; }
     public string? Repository { get; set; }
     public string? Branch { get; set; }

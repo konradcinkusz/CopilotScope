@@ -1,11 +1,13 @@
 using CopilotScope.Dashboard.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace CopilotScope.Dashboard.Components.Pages;
 
 public partial class Home : ComponentBase, IDisposable
 {
     [Inject] public required CollectorClient Collector { get; set; }
+    [Inject] public required IJSRuntime JS { get; set; }
 
     private List<SessionSummaryDto>? _sessions;
     private SessionDetailDto? _detail;
@@ -14,6 +16,9 @@ public partial class Home : ComponentBase, IDisposable
     private bool _confirmDelete;
     private bool _showChat;
     private bool _showInternal;
+    private bool _showAllTurns;
+    private bool _chatWasOpen;
+    private ElementReference _chatScrollRef;
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>Parses one transcript entry into renderable chat messages (prompt side then response side).</summary>
@@ -36,6 +41,19 @@ public partial class Home : ComponentBase, IDisposable
     {
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showChat && !_chatWasOpen)
+        {
+            _chatWasOpen = true;
+            await JS.InvokeVoidAsync("scrollToBottom", _chatScrollRef);
+        }
+        else if (!_showChat)
+        {
+            _chatWasOpen = false;
+        }
     }
 
     private async Task PollAsync()
@@ -82,6 +100,7 @@ public partial class Home : ComponentBase, IDisposable
         _selectedId = id;
         _confirmDelete = false;
         _showChat = false;
+        _showAllTurns = false;
         _detail = await Collector.GetSessionAsync(id, _cts.Token);
     }
 
@@ -166,6 +185,37 @@ public partial class Home : ComponentBase, IDisposable
         return d.TotalSeconds < 60 ? $"{d.TotalSeconds:0} s temu"
              : d.TotalMinutes < 60 ? $"{d.TotalMinutes:0} min temu"
              : $"{d.TotalHours:0} h temu";
+    }
+
+    private static bool IsCli(SessionSummaryDto s) => s.EmitterKind == EmitterKind.CLI;
+
+    private static string EmitterLabel(EmitterKind k) => k switch
+    {
+        EmitterKind.VSCode => "VS Code",
+        EmitterKind.CLI => "CLI",
+        _ => ""
+    };
+
+    /// <summary>CSS class for quality score color — uses percentile rank when history is available, absolute grade as fallback.</summary>
+    private static string RelativeGradeClass(QualityReportDto q) => q.PercentileRank switch
+    {
+        >= 0.75 => "grade-excellent",
+        >= 0.35 => "grade-good",
+        >= 0.15 => "grade-fair",
+        not null => "grade-poor",
+        _ => $"grade-{q.Grade}"
+    };
+
+    /// <summary>Subtitle line for quality score — shows percentile context when history is available.</summary>
+    private static string QualitySubtitle(QualityReportDto q)
+    {
+        if (q.PercentileRank is not { } pct || q.HistoryCount is not { } n || n < 3)
+            return $"/ 100 · {q.Grade} · confidence {(q.Confidence * 100):0}%";
+
+        var pctLabel = $"{(int)(pct * 100)}th percentile";
+        var zLabel = q.ZScore is { } z ? $" ({(z >= 0 ? "+" : "")}{z:0.0}σ)" : "";
+        var meanLabel = q.HistoryMean?.ToString("0.0") ?? "?";
+        return $"/ 100 · {pctLabel}{zLabel} vs last {n} sessions (mean {meanLabel})";
     }
 
     public void Dispose()

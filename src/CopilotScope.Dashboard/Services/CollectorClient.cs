@@ -49,6 +49,8 @@ public enum SessionKind
     Unattributed
 }
 
+public enum EmitterKind { Unknown, VSCode, CLI }
+
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
     DateTimeOffset FirstSeen, DateTimeOffset LastSeen,
@@ -60,7 +62,8 @@ public sealed record SessionSummaryDto(
     double TtftP50Ms, double TtftP95Ms,
     Dictionary<string, int> Models,
     QualityReportDto Quality,
-    SessionKind Kind);
+    SessionKind Kind,
+    EmitterKind EmitterKind = EmitterKind.Unknown);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -93,7 +96,19 @@ public sealed record ToolStatDto(string Name, int Calls, int Errors, double AvgM
 public sealed record SessionEventDto(DateTimeOffset Time, string Kind, string Summary);
 
 public sealed record QualityReportDto(
-    double Score, double Confidence, string Grade, List<QualityComponentDto> Components);
+    double Score, double Confidence, string Grade, List<QualityComponentDto> Components,
+    double? PercentileRank = null, int? HistoryCount = null, double? HistoryMean = null, double? HistoryStdDev = null)
+{
+    public double? ZScore =>
+        HistoryMean is { } mu && HistoryStdDev is > 0 ? (Score - mu) / HistoryStdDev : null;
+    public string? RelativeGrade => PercentileRank switch
+    {
+        >= 0.75 => "above baseline",
+        >= 0.35 => "at baseline",
+        < 0.35 => "below baseline",
+        _ => null
+    };
+}
 
 public sealed record QualityComponentDto(
     string Name, double Weight, double Value, int Samples, string Detail);

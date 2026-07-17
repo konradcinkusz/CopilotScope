@@ -223,9 +223,48 @@ html, body {
 .turn-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; }
 .turn-row.best  { background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .turn-row.worst { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.turn-row-compact { padding: 2px 6px; }
 .turn-idx { font-family: var(--mono); font-size: 12px; width: 34px; color: var(--dim); }
 .turn-score { font-family: var(--mono); font-size: 12px; width: 30px; text-align: right; }
 .turn-reasons { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 2; }
+
+.turns-clean-banner {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 12px; color: var(--ok);
+  padding: 8px 6px; margin: 4px 0;
+}
+.turns-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+
+.btn-sm { font-size: 10px; padding: 2px 7px; margin-left: auto; }
+.turns-toggle { color: var(--dim); }
+
+/* -------------------------------------------------- percentile / history bar */
+
+.percentile-bar {
+  position: relative; height: 6px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 3px; margin: 0 0 10px; overflow: visible;
+}
+.percentile-fill {
+  height: 100%; background: linear-gradient(90deg, var(--err), var(--copper) 40%, var(--ok));
+  border-radius: 3px; transition: width .4s;
+}
+.percentile-label {
+  position: absolute; right: 0; top: -18px;
+  font-family: var(--mono); font-size: 10px; color: var(--dim); white-space: nowrap;
+}
+
+/* mean-position marker on the VU bar (unfilled segment at population mean) */
+.vu-seg.vu-mean { background: color-mix(in srgb, var(--dim) 35%, transparent); border-color: var(--dim); }
+
+/* --------------------------------------------------- emitter badge variants */
+
+.emitter-vscode { color: #8fb8e8; border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
+.emitter-cli    { color: var(--copper); border-color: color-mix(in srgb, var(--copper) 55%, transparent); }
+
+/* -------------------------------------------- CLI N/A quality components */
+
+.component-na { opacity: .45; }
+.component-na .bar { display: none; }
 
 /* -------------------------------------------------------------- transcript */
 
