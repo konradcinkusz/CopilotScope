@@ -69,11 +69,17 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     }
 
     var contentType = request.ContentType ?? "";
-    if (!contentType.Contains("protobuf", StringComparison.OrdinalIgnoreCase))
+    var isProtobuf = contentType.Contains("protobuf", StringComparison.OrdinalIgnoreCase);
+    // Some Copilot surfaces (VS Code metrics/logs exporters, as of July 2026) ship the
+    // JSON-only OTLP exporter regardless of exporterType/protocol settings — a confirmed
+    // upstream gap (github/copilot-cli#2934), not something fixable from the client side.
+    // Accept OTLP/HTTP JSON too so those signals aren't silently dropped.
+    var isJson = !isProtobuf && contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+    if (!isProtobuf && !isJson)
     {
         logger.LogWarning("Rejected /v1/{Signal}: unsupported content type '{ContentType}'. " +
-            "Set github.copilot.chat.otel.exporterType to 'otlp-http' (protobuf).", signal, contentType);
-        return Results.Json(new { error = "Only OTLP/HTTP protobuf is supported. Set github.copilot.chat.otel.exporterType to 'otlp-http'." },
+            "Expected OTLP/HTTP protobuf or JSON.", signal, contentType);
+        return Results.Json(new { error = "Only OTLP/HTTP protobuf or JSON is supported." },
             statusCode: StatusCodes.Status415UnsupportedMediaType);
     }
 
@@ -93,16 +99,29 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     var batch = new OtlpBatch();
     try
     {
-        switch (signal)
+        if (isJson)
         {
-            case "traces": OtlpDecoder.DecodeTraces(payload, batch); break;
-            case "metrics": OtlpDecoder.DecodeMetrics(payload, batch); break;
-            case "logs": OtlpDecoder.DecodeLogs(payload, batch); break;
+            switch (signal)
+            {
+                case "traces": OtlpJsonDecoder.DecodeTraces(payload, batch); break;
+                case "metrics": OtlpJsonDecoder.DecodeMetrics(payload, batch); break;
+                case "logs": OtlpJsonDecoder.DecodeLogs(payload, batch); break;
+            }
+        }
+        else
+        {
+            switch (signal)
+            {
+                case "traces": OtlpDecoder.DecodeTraces(payload, batch); break;
+                case "metrics": OtlpDecoder.DecodeMetrics(payload, batch); break;
+                case "logs": OtlpDecoder.DecodeLogs(payload, batch); break;
+            }
         }
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Failed to decode OTLP {Signal} payload ({Bytes} bytes)", signal, payload.Length);
+        logger.LogWarning(ex, "Failed to decode OTLP {Signal} payload ({Bytes} bytes, {Format})",
+            signal, payload.Length, isJson ? "json" : "protobuf");
         return Results.BadRequest(new { error = ex.Message });
     }
 
@@ -128,16 +147,20 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     logger.LogDebug("OTLP {Signal}: {Spans} spans, {Metrics} points, {Logs} logs → {Sessions} session(s)",
         signal, batch.Spans.Count, batch.Metrics.Count, batch.Logs.Count, touched.Count);
 
-    // OTLP/HTTP success: empty Export*ServiceResponse — an empty protobuf message is valid.
-    return Results.Bytes(Array.Empty<byte>(), "application/x-protobuf");
+    // OTLP/HTTP success: empty Export*ServiceResponse. An empty protobuf message is valid;
+    // the JSON mapping of the same empty response is `{}`.
+    return isJson
+        ? Results.Text("{}", "application/json")
+        : Results.Bytes(Array.Empty<byte>(), "application/x-protobuf");
 });
 
 // ------------------------------------------------------------------ query API
 
 var api = app.MapGroup("/api");
 
-api.MapGet("/sessions", () =>
+api.MapGet("/sessions", (bool? includeInternal) =>
     Results.Ok(store.All
+        .Where(s => includeInternal == true || !SessionClassifier.IsInternal(s.Kind))
         .OrderByDescending(s => s.LastSeen)
         .Select(s => Dto.Summary(s, quality))));
 

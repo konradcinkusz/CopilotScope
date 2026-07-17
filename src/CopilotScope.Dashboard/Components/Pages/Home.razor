@@ -23,7 +23,13 @@
 
 <div class="grid">
     <aside class="rail">
-        <div class="rail-title">Sessions</div>
+        <div class="rail-title">
+            Sessions
+            <label class="toggle-internal">
+                <input type="checkbox" checked="@_showInternal" @onchange="e => ToggleShowInternalAsync((bool)e.Value!)" />
+                Show internal/debug sessions
+            </label>
+        </div>
         @if (_sessions is null)
         {
             <div class="empty">Connecting to the collector…</div>
@@ -40,7 +46,14 @@
             @foreach (var s in _sessions)
             {
                 <button class="session @(s.Id == _selectedId ? "active" : "")" @onclick="() => SelectAsync(s.Id)">
-                    <span class="session-id">@s.Id</span>
+                    <span class="session-id">
+                        <span class="dot status-dot-@SessionStatus(s).Css" title="@SessionStatus(s).Label"></span>
+                        @s.Id
+                        @if (s.Kind != SessionKind.UserChat)
+                        {
+                            <span class="session-kind-badge">@KindLabel(s.Kind)</span>
+                        }
+                    </span>
                     <span class="session-meta">@s.ChatCalls chat · @s.ToolCalls tools · @Ago(s.LastSeen)</span>
                     <span class="session-score grade-@s.Quality.Grade">@s.Quality.Score.ToString("0")</span>
                 </button>
@@ -66,6 +79,8 @@
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
+                        @{ var status = SessionStatus(s); }
+                        <span class="status-chip status-@status.Css">@status.Label</span>
                         @if (_confirmDelete)
                         {
                             <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
@@ -84,12 +99,20 @@
                         <span class="vu-seg @(lit ? SegClass(i) : "")"></span>
                     }
                 </div>
+                @{ var worst = WorstComponent(q); }
+                @if (worst is not null)
+                {
+                    <div class="worst-factor">
+                        <span class="dot dot-@TrafficClass(worst)"></span>
+                        Biggest drag on quality: <b>@worst.Name</b> (@((worst.Value * 100).ToString("0"))/100) — @worst.Detail
+                    </div>
+                }
                 <div class="components">
                     @foreach (var c in q.Components)
                     {
                         <div class="component">
                             <div class="component-head">
-                                <span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
+                                <span><span class="dot dot-@TrafficClass(c)"></span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
                                 <span>@((c.Value * 100).ToString("0"))</span>
                             </div>
                             <div class="bar"><span style="width:@(Pct(c.Value))%"></span></div>

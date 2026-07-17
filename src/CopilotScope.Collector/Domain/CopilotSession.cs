@@ -184,6 +184,9 @@ public sealed class CopilotSession
         lock (_lock) return projector(this);
     }
 
+    /// <summary>UserChat vs. internal Copilot helper call (title generation, summarization, ...).</summary>
+    public SessionKind Kind => Snapshot(SessionClassifier.Classify);
+
     public static double Percentile(IReadOnlyList<double> values, double p)
     {
         if (values.Count == 0) return 0;

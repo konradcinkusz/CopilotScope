@@ -1,0 +1,47 @@
+%% CopilotScope architecture — clients, local deployment, cloud deployment
+flowchart TB
+    subgraph Clients["Copilot clients — agnostic emitters (one OTLP endpoint)"]
+        direction LR
+        VSC["VS Code<br/><i>gen_ai.* spans + metrics</i>"]
+        CLI["Copilot CLI<br/><i>github.copilot.* dialect</i>"]
+        CC["Claude Code<br/><i>claude_code.* — adapter TBD</i>"]
+        GH["GitHub Metrics API<br/><i>org-level polling — TBD</i>"]
+    end
+
+    subgraph Local["Local — Docker Compose (today)"]
+        direction TB
+        LC["Collector (ASP.NET)<br/>OTLP ingest · quality engine<br/>insights pipeline · REST API"]
+        LD["Dashboard<br/><i>Blazor Server</i>"]
+        LP[("Postgres<br/><i>Session snapshots</i>")]
+        LDist["Distribution — GHCR images, one compose file"]
+        LJ["Judge agent — not available locally<br/><i>needs model access + token budget</i>"]
+        LC --> LD
+        LC --> LP
+    end
+
+    subgraph Azure["Azure — Bicep (planned)"]
+        direction TB
+        AC["Collector — Container Apps<br/><i>same image, EasyAuth ingress</i>"]
+        AD["Dashboard<br/><i>Static Web App</i>"]
+        AP[("PostgreSQL<br/><i>Flexible Server</i>")]
+        AJ["Judge agent — Azure AI Foundry<br/>SPUR / G-Eval rubrics<br/><i>Key Vault holds model keys</i>"]
+        AID["Identity — Entra ID<br/><i>per-user session scoping</i>"]
+        AC --> AD
+        AC --> AP
+        AC <--> AJ
+        AC -.- AID
+    end
+
+    Clients -- "OTLP/HTTP :4318" --> LC
+
+    LC -. "1. Streaming — forward each OTLP batch" .-> AC
+    LP -. "2. On-prem logs — periodic sync" .-> AC
+
+    classDef external fill:#F1EFE8,stroke:#5F5E5A,stroke-width:1px,color:#2C2C2A
+    classDef core fill:#EEEDFE,stroke:#3C3489,stroke-width:1px,color:#26215C
+    classDef judge fill:#FAEEDA,stroke:#854F0B,stroke-width:1px,color:#412402
+    classDef sync fill:#FAECE7,stroke:#993C1D,stroke-width:1px,color:#4A1B0C
+
+    class VSC,CLI,CC,GH,LDist,AID external
+    class LC,LD,LP,AC,AD,AP core
+    class LJ,AJ judge

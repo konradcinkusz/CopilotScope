@@ -1,7 +1,6 @@
-# Builds and publishes the three CopilotScope images to GitHub Container Registry
+# Builds and publishes the CopilotScope images to GitHub Container Registry
 # when a release tag is pushed (e.g. v1.0.0). Create a release via GitHub UI —
 # that automatically creates the tag and triggers this workflow. Images:
-#   ghcr.io/konradcinkusz/copilotscope            (all-in-one: collector in-memory + dashboard)
 #   ghcr.io/konradcinkusz/copilotscope-collector
 #   ghcr.io/konradcinkusz/copilotscope-dashboard
 #
@@ -32,8 +31,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: copilotscope
-            dockerfile: Dockerfile.allinone
           - image: copilotscope-collector
             dockerfile: Dockerfile
           - image: copilotscope-dashboard

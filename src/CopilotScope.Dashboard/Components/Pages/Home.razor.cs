@@ -13,6 +13,7 @@ public partial class Home : ComponentBase, IDisposable
     private string? _selectedId;
     private bool _confirmDelete;
     private bool _showChat;
+    private bool _showInternal;
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>Parses one transcript entry into renderable chat messages (prompt side then response side).</summary>
@@ -56,7 +57,7 @@ public partial class Home : ComponentBase, IDisposable
         try
         {
             _health = await Collector.GetHealthAsync(_cts.Token);
-            _sessions = await Collector.GetSessionsAsync(_cts.Token);
+            _sessions = await Collector.GetSessionsAsync(_showInternal, _cts.Token);
 
             // Auto-focus the most recent session until the user picks one explicitly.
             _selectedId ??= _sessions.FirstOrDefault()?.Id;
@@ -68,6 +69,12 @@ public partial class Home : ComponentBase, IDisposable
         {
             _health = null; // collector unreachable — keep the last known data on screen
         }
+    }
+
+    private async Task ToggleShowInternalAsync(bool value)
+    {
+        _showInternal = value;
+        await RefreshAsync();
     }
 
     private async Task SelectAsync(string id)
@@ -93,6 +100,15 @@ public partial class Home : ComponentBase, IDisposable
         await RefreshAsync();
     }
 
+    private static string KindLabel(SessionKind kind) => kind switch
+    {
+        SessionKind.InternalTitleGeneration => "title-gen",
+        SessionKind.InternalSummary => "summary",
+        SessionKind.InternalHelper => "internal",
+        SessionKind.Unattributed => "unattributed",
+        _ => ""
+    };
+
     private static string SegClass(int i) => i switch
     {
         < 16 => "seg-low",
@@ -110,6 +126,39 @@ public partial class Home : ComponentBase, IDisposable
 
     private static string Pct(double v) =>
         (v * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Traffic-light class for one quality component. "unknown" (no samples yet) is
+    /// distinct from "bad" — it means the signal hasn't arrived, not that it's failing.</summary>
+    private static string TrafficClass(QualityComponentDto c) => c.Samples switch
+    {
+        0 => "unknown",
+        _ when c.Value >= 0.7 => "good",
+        _ when c.Value >= 0.4 => "warn",
+        _ => "bad"
+    };
+
+    /// <summary>The component doing the most damage to the composite score right now, ranked by
+    /// weighted deficit (weight × shortfall) rather than raw value — a low-weight component at 0
+    /// matters less than a high-weight one at 0.5. Ignores components with no samples: you can't
+    /// blame a factor that hasn't reported in yet.</summary>
+    private static QualityComponentDto? WorstComponent(QualityReportDto q) =>
+        q.Components.Where(c => c.Samples > 0)
+                     .OrderByDescending(c => c.Weight * (1 - c.Value))
+                     .FirstOrDefault(c => c.Weight * (1 - c.Value) > 0.01);
+
+    /// <summary>Coarse session lifecycle read purely off FirstSeen/LastSeen — no explicit "session
+    /// closed" signal exists in the telemetry, so this is a heuristic, not a fact from the client.</summary>
+    private static (string Label, string Css) SessionStatus(SessionSummaryDto s)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var sinceStart = now - s.FirstSeen;
+        var sinceActivity = now - s.LastSeen;
+
+        if (sinceActivity > TimeSpan.FromMinutes(15)) return ("Ended", "ended");
+        if (sinceActivity > TimeSpan.FromMinutes(1)) return ("Idle", "idle");
+        if (sinceStart < TimeSpan.FromSeconds(20)) return ("Just started", "new");
+        return ("Active", "active");
+    }
 
     private static string Ago(DateTimeOffset t)
     {

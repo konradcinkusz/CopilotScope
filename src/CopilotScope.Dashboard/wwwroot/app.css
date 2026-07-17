@@ -50,7 +50,15 @@ html, body {
 /* -------------------------------------------------------------------- rail */
 
 .rail { display: flex; flex-direction: column; gap: 8px; }
-.rail-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); }
+.rail-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.toggle-internal { display: flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: normal; font-size: 10px; cursor: pointer; }
+.toggle-internal input { cursor: pointer; }
+
+.session-kind-badge {
+  margin-left: 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+}
 
 .session {
   display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto;
@@ -103,6 +111,42 @@ html, body {
 .component-head { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; }
 .component-head em { color: var(--dim); font-style: normal; }
 .component-detail { font-size: 11px; color: var(--dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -------------------------------------------------------- traffic-light dots */
+
+.dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle; flex-shrink: 0;
+}
+.dot-good    { background: var(--ok); }
+.dot-warn    { background: var(--copper); }
+.dot-bad     { background: var(--err); }
+.dot-unknown { background: var(--dim); opacity: .5; }
+
+.worst-factor {
+  display: flex; align-items: center; gap: 2px;
+  font-size: 12px; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 12px;
+}
+.worst-factor b { color: var(--copper); }
+
+/* ------------------------------------------------------------- status chip */
+
+.status-chip {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px;
+  white-space: nowrap;
+}
+.status-new    { color: var(--ok);     border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.status-active { color: #8fb8e8;       border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
+.status-idle   { color: var(--copper); border-color: color-mix(in srgb, var(--copper) 55%, transparent); }
+.status-ended  { color: var(--dim);    border-color: var(--line); }
+
+.status-dot-new    { background: var(--ok); box-shadow: 0 0 4px var(--ok); }
+.status-dot-active { background: #8fb8e8; }
+.status-dot-idle   { background: var(--copper); }
+.status-dot-ended  { background: var(--dim); opacity: .5; }
 
 .bar { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 5px; overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--copper); border-radius: 3px; transition: width .4s; }

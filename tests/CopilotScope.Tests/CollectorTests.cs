@@ -45,6 +45,131 @@ public class OtlpDecoderTests
     }
 }
 
+// ------------------------------------------------------------- OTLP/JSON decoding
+// VS Code's metrics/logs OTel exporters ship JSON regardless of exporterType/protocol
+// settings (github/copilot-cli#2934) — OtlpJsonDecoder exists to not drop that data.
+
+public class OtlpJsonDecoderTests
+{
+    [Fact]
+    public void DecodesTraceSpanFromJson()
+    {
+        var traceIdB64 = Convert.ToBase64String(Enumerable.Repeat((byte)0x11, 16).ToArray());
+        var spanIdB64 = Convert.ToBase64String(Enumerable.Repeat((byte)0x22, 8).ToArray());
+        var startNano = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
+        var endNano = startNano + 500_000_000UL;
+        var json = """
+        {
+          "resourceSpans": [{
+            "resource": { "attributes": [{"key":"service.name","value":{"stringValue":"copilot-chat"}}] },
+            "scopeSpans": [{
+              "spans": [{
+                "traceId": "TRACE_ID",
+                "spanId": "SPAN_ID",
+                "name": "chat gpt-4o",
+                "startTimeUnixNano": "START_NANO",
+                "endTimeUnixNano": "END_NANO",
+                "attributes": [
+                  {"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},
+                  {"key":"gen_ai.usage.input_tokens","value":{"intValue":"1234"}}
+                ],
+                "status": {"code": 2, "message": "boom"}
+              }]
+            }]
+          }]
+        }
+        """
+            .Replace("TRACE_ID", traceIdB64)
+            .Replace("SPAN_ID", spanIdB64)
+            .Replace("START_NANO", startNano.ToString())
+            .Replace("END_NANO", endNano.ToString());
+
+        var batch = new OtlpBatch();
+        OtlpJsonDecoder.DecodeTraces(System.Text.Encoding.UTF8.GetBytes(json), batch);
+
+        var span = Assert.Single(batch.Spans);
+        Assert.Equal("chat gpt-4o", span.Name);
+        Assert.Equal("chat", span.Attr("gen_ai.operation.name"));
+        Assert.Equal(1234L, span.AttrLong("gen_ai.usage.input_tokens"));
+        Assert.Equal(2, span.StatusCode);
+        Assert.Equal(new string('1', 32), span.TraceId); // 16 bytes of 0x11 -> hex "11"*16
+        Assert.Equal("copilot-chat", span.Resource["service.name"].ToString());
+        Assert.True(span.DurationMs is > 400 and < 600);
+    }
+
+    [Fact]
+    public void DecodesGaugeMetricFromJson()
+    {
+        var nowNano = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
+        var json = """
+        {
+          "resourceMetrics": [{
+            "resource": { "attributes": [] },
+            "scopeMetrics": [{
+              "metrics": [{
+                "name": "gen_ai.client.token.usage",
+                "unit": "token",
+                "sum": {
+                  "dataPoints": [{
+                    "timeUnixNano": "NOW_NANO",
+                    "asInt": "42",
+                    "attributes": []
+                  }]
+                }
+              }]
+            }]
+          }]
+        }
+        """.Replace("NOW_NANO", nowNano.ToString());
+
+        var batch = new OtlpBatch();
+        OtlpJsonDecoder.DecodeMetrics(System.Text.Encoding.UTF8.GetBytes(json), batch);
+
+        var point = Assert.Single(batch.Metrics);
+        Assert.Equal("gen_ai.client.token.usage", point.MetricName);
+        Assert.Equal(MetricKind.Sum, point.Kind);
+        Assert.Equal(42, point.Value);
+    }
+
+    [Fact]
+    public void DecodesLogRecordFromJson()
+    {
+        var nowNano = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
+        var json = """
+        {
+          "resourceLogs": [{
+            "resource": { "attributes": [] },
+            "scopeLogs": [{
+              "logRecords": [{
+                "timeUnixNano": "NOW_NANO",
+                "severityNumber": 9,
+                "eventName": "copilot_chat.user.feedback",
+                "body": {"stringValue": "thumbs up"},
+                "attributes": []
+              }]
+            }]
+          }]
+        }
+        """.Replace("NOW_NANO", nowNano.ToString());
+
+        var batch = new OtlpBatch();
+        OtlpJsonDecoder.DecodeLogs(System.Text.Encoding.UTF8.GetBytes(json), batch);
+
+        var log = Assert.Single(batch.Logs);
+        Assert.Equal("copilot_chat.user.feedback", log.EventName);
+        Assert.Equal("thumbs up", log.Body);
+        Assert.Equal(9, log.SeverityNumber);
+    }
+
+    [Fact]
+    public void EmptyJsonYieldsEmptyBatch()
+    {
+        var batch = new OtlpBatch();
+        OtlpJsonDecoder.DecodeTraces(System.Text.Encoding.UTF8.GetBytes("{}"), batch);
+        Assert.Empty(batch.Spans);
+    }
+}
+
 // ----------------------------------------------------------- session routing
 
 public class SessionStoreTests
@@ -220,6 +345,31 @@ public class SessionStoreTests
         Assert.Equal("Fix the bug in Ingest", entry.Prompt);
         Assert.Equal("Done — tokens are now counted once.", entry.Response);
         Assert.Equal(0, entry.Turn);
+    }
+
+    [Theory]
+    [InlineData("Please write a brief title for the following request:\nwrite 5 paragraphs about ww2", SessionKind.InternalTitleGeneration)]
+    [InlineData("Summarize the following content in a SINGLE sentence (under 10 words) using past tense...", SessionKind.InternalSummary)]
+    [InlineData("write 5 paragraphs about ww2", SessionKind.UserChat)]
+    public void ClassifiesSessionKindFromTranscriptPrefix(string prompt, SessionKind expected)
+    {
+        var store = new SessionStore();
+        var now = DateTimeOffset.UtcNow;
+        var traceId = TestOtlp.Trace(41);
+        var batch = new OtlpBatch();
+        OtlpDecoder.DecodeTraces(TestOtlp.TracesRequest("vscode-window-1",
+            TestOtlp.Span(traceId, TestOtlp.SpanId(41), "invoke_agent copilot",
+                now, now.AddSeconds(2), error: null,
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("gen_ai.conversation.id", "conv-K")),
+            TestOtlp.Span(traceId, TestOtlp.SpanId(42), "chat gpt-4o",
+                now, now.AddSeconds(1), error: null,
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.input.messages", prompt),
+                ("gen_ai.output.messages", "response"))), batch);
+        store.Ingest(batch);
+
+        Assert.Equal(expected, store.Get("conv-K")!.Kind);
     }
 }
 

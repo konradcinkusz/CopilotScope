@@ -9,8 +9,8 @@ namespace CopilotScope.Dashboard.Services;
 /// </summary>
 public sealed class CollectorClient(HttpClient http)
 {
-    public async Task<List<SessionSummaryDto>> GetSessionsAsync(CancellationToken ct = default)
-        => await http.GetFromJsonAsync<List<SessionSummaryDto>>("/api/sessions", ct) ?? [];
+    public async Task<List<SessionSummaryDto>> GetSessionsAsync(bool includeInternal = false, CancellationToken ct = default)
+        => await http.GetFromJsonAsync<List<SessionSummaryDto>>($"/api/sessions?includeInternal={includeInternal}", ct) ?? [];
 
     public async Task<SessionDetailDto?> GetSessionAsync(string id, CancellationToken ct = default)
     {
@@ -40,6 +40,15 @@ public sealed class CollectorClient(HttpClient http)
 
 // --- DTOs mirroring CopilotScope.Collector.Api (deserialized with Web defaults) ---
 
+public enum SessionKind
+{
+    UserChat,
+    InternalTitleGeneration,
+    InternalSummary,
+    InternalHelper,
+    Unattributed
+}
+
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
     DateTimeOffset FirstSeen, DateTimeOffset LastSeen,
@@ -50,7 +59,8 @@ public sealed record SessionSummaryDto(
     double LinesAdded, double LinesRemoved,
     double TtftP50Ms, double TtftP95Ms,
     Dictionary<string, int> Models,
-    QualityReportDto Quality);
+    QualityReportDto Quality,
+    SessionKind Kind);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,

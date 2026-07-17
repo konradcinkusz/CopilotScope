@@ -27,15 +27,15 @@ VS Code / Copilot CLI     │  Collector :4318 ──▶ Postgres (container + v
 
 ## Quick start — no clone, just pull
 
-Each GitHub release publishes three images to GHCR (see `.github/workflows/build-containers.yml`).
+Each GitHub release publishes two images to GHCR (see `.github/workflows/build-containers.yml`).
 Users don't need the repository at all:
 
 ```bash
-# All-in-one (collector in-memory + dashboard, one container, one command):
-docker run --rm -p 4318:4318 -p 5200:5200 ghcr.io/konradcinkusz/copilotscope:latest
-
-# Durable variant (Postgres + collector + dashboard) — download ONE file, no clone:
+# Durable (Postgres + collector + dashboard) — download ONE file, no clone:
+# Linux / macOS / Git Bash:
 curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+# Windows PowerShell:
+curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
 docker compose -f docker-compose.ghcr.yml up
 ```
 
@@ -119,41 +119,30 @@ dashboard highlights the best and worst turn **with reasons**.
 
 ### Evaluation algorithms — implementation status
 
-| # | Algorithm | Status | Where |
-|---|---|---|---|
-| 1 | LLM-as-a-Judge (G-Eval) | ❌ not implemented | needs a judge model, conversation content and a token budget |
-| 2 | SPUR (learned satisfaction rubrics) | ❌ not implemented | needs an LLM + labeled training sessions |
-| 3 | RAG component metrics (RAGAS) | ❌ not implemented | applies to retrieval-based sessions; needs content |
-| 4 | Edit Survival Analysis | ✅ **full** | `EditSurvivalAnalyzer` — four-gram & no-revert split (0.4/0.6); also feeds the *acceptance* component |
-| 5 | Acceptance-weighted throughput | ✅ **full** | `ThroughputAnalyzer` — accepted LOC/turn, LOC per 1k output tokens, rejection-discounted |
-| 6 | Turn-level Friction & Repair (TFRA) | ✅ **full** | `SegmentAnalyzer` (Turn analysis panel) + *friction* component in the composite |
-| 7 | Latency-utility model | ✅ **full** | `LatencyUtilityAnalyzer` — per-sample utility curve, >2 s / >8 s risk buckets; simplified form also as the *latency* component |
-| 8 | Token & cache economics | ✅ **full** | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
-| 9 | Frustration classification | ✅ **simplified** | `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography; **report-only**, deliberately outside the composite |
-| 10 | Task-completion detection | ❌ not implemented | needs completion signals (build/test results) outside Copilot telemetry |
+Two axes now: **implementation status** (are the components there?) and **deployment scope** (does the algorithm work in the local-only setup, or does it require the cloud deployment with the judge agent?). Local means the analyzer runs entirely on-machine with no external services. Cloud means it depends on the Azure-provisioned judge agent (LLM access, model keys in Key Vault, per-user auth).
 
-Analyzers #4–#9 run as a pluggable insight pipeline (`Quality/Insights.cs`):
-one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI
-work. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+| # | Algorithm | Status | Local | Cloud | Where |
+|---|---|---|---|---|---|
+| 1 | LLM-as-a-Judge (G-Eval) | ❌ not implemented | ❌ | ✅ planned | needs the cloud judge agent (Azure AI Foundry) — model access, prompt budget, per-user auth |
+| 2 | SPUR (learned satisfaction rubrics) | ❌ not implemented | ❌ | ✅ planned | needs the judge agent to run the learned rubric and labelled sessions for calibration |
+| 3 | RAG component metrics (RAGAS) | ❌ not implemented | ❌ | ✅ planned | needs the judge agent plus captured retrieval context; only meaningful for retrieval-based Copilot flows |
+| 4 | Edit Survival Analysis | ✅ **full** | ✅ | ✅ | `EditSurvivalAnalyzer` — four-gram & no-revert split (0.4/0.6); also feeds the *acceptance* component |
+| 5 | Acceptance-weighted throughput | ✅ **full** | ✅ | ✅ | `ThroughputAnalyzer` — accepted LOC/turn, LOC per 1k output tokens, rejection-discounted |
+| 6 | Turn-level Friction & Repair (TFRA) | ✅ **full** | ✅ | ✅ | `SegmentAnalyzer` (Turn analysis panel) + *friction* component in the composite |
+| 7 | Latency-utility model | ✅ **full** | ✅ | ✅ | `LatencyUtilityAnalyzer` — per-sample utility curve, >2 s / >8 s risk buckets; simplified form also as the *latency* component |
+| 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
+| 9 | Frustration classification | ✅ **simplified** (local) · 🔜 **deep** (cloud) | ✅ heuristic | 🔜 planned | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: deep classifier via the judge agent (sarcasm-aware, context-grounded), promoted into the composite once validated |
+| 10 | Task-completion detection | ❌ not implemented | ⚠️ partial | ✅ planned | Local partial: hooks for external completion signals (build/test exit codes) via the ingest API. Cloud full: judge agent reasons about "did the user's ask get resolved" from transcript + tool outcomes |
 
+Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only analyzers (#1–#3, plus the deep variants of #9/#10) implement the same `IInsightAnalyzer` interface but call out to the Azure AI Foundry judge agent; they register only when the collector is deployed with judge configuration enabled, so a local-only setup shows them as "no-data" with a `"requires cloud deployment"` note rather than an error. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
 ## Deployment options
 
 | Mode | Command | Containers |
 |---|---|---|
 | Dev (Aspire) | `dotnet run --project src/CopilotScope.AppHost` | postgres, pgadmin |
 | Compose | `docker compose up --build` | postgres, collector, dashboard |
-| **Single image (GHCR)** | see below | one |
+| **GHCR (durable)** | see "Quick start — no clone, just pull" above | postgres, collector, dashboard |
 | Azure Container Apps | `infra/main.bicep` | collector (+ your PG) |
-
-Single all-in-one image (collector in-memory + dashboard in one container):
-
-```bash
-docker build -f Dockerfile.allinone -t ghcr.io/<user>/copilotscope:latest .
-echo $GITHUB_PAT | docker login ghcr.io -u <user> --password-stdin
-docker push ghcr.io/<user>/copilotscope:latest
-# anyone:
-docker run --rm -p 4318:4318 -p 5200:5200 ghcr.io/<user>/copilotscope:latest
-```
 
 In Production mode `/v1/*` requires `x-api-key` (`CopilotScope__Ingest__ApiKey`);
 clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
@@ -191,6 +180,73 @@ copilot                                           # run from the SAME terminal
 Heads-up: `COPILOT_OTEL_CAPTURE_CONTENT` is **not a real variable** — the CLI
 follows the OTel GenAI standard `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`,
 which is what the script sets.
+
+## Architecture
+
+Copilot clients (VS Code, Copilot CLI, Claude Code, GitHub Metrics API) are
+agnostic to the deployment — they emit OpenTelemetry to **one OTLP endpoint**,
+which in the basic setup is the local collector. From there sessions can stay
+on the developer's machine, be streamed upstream to Azure in near real time, or
+be batch-synced from Postgres after the fact. The Azure deployment (Bicep,
+planned) provisions the same collector image plus an LLM **judge agent** that
+grades sessions using SPUR/G-Eval rubrics — a class of insights that requires
+model access and is deliberately unavailable in the local-only setup.
+
+![CopilotScope architecture](docs/architecture.svg)
+
+<details>
+<summary>Diagram source (Mermaid — edit here, re-export SVG)</summary>
+
+```mermaid
+%% CopilotScope architecture — clients, local deployment, cloud deployment
+flowchart TB
+    subgraph Clients["Copilot clients — agnostic emitters (one OTLP endpoint)"]
+        direction LR
+        VSC["VS Code<br/><i>gen_ai.* spans + metrics</i>"]
+        CLI["Copilot CLI<br/><i>github.copilot.* dialect</i>"]
+        CC["Claude Code<br/><i>claude_code.* — adapter TBD</i>"]
+        GH["GitHub Metrics API<br/><i>org-level polling — TBD</i>"]
+    end
+
+    subgraph Local["Local — Docker Compose (today)"]
+        direction TB
+        LC["Collector (ASP.NET)<br/>OTLP ingest · quality engine<br/>insights pipeline · REST API"]
+        LD["Dashboard<br/><i>Blazor Server</i>"]
+        LP[("Postgres<br/><i>Session snapshots</i>")]
+        LDist["Distribution — GHCR images, one compose file"]
+        LJ["Judge agent — not available locally<br/><i>needs model access + token budget</i>"]
+        LC --> LD
+        LC --> LP
+    end
+
+    subgraph Azure["Azure — Bicep (planned)"]
+        direction TB
+        AC["Collector — Container Apps<br/><i>same image, EasyAuth ingress</i>"]
+        AD["Dashboard<br/><i>Static Web App</i>"]
+        AP[("PostgreSQL<br/><i>Flexible Server</i>")]
+        AJ["Judge agent — Azure AI Foundry<br/>SPUR / G-Eval rubrics<br/><i>Key Vault holds model keys</i>"]
+        AID["Identity — Entra ID<br/><i>per-user session scoping</i>"]
+        AC --> AD
+        AC --> AP
+        AC <--> AJ
+        AC -.- AID
+    end
+
+    Clients -- "OTLP/HTTP :4318" --> LC
+
+    LC -. "1. Streaming — forward each OTLP batch" .-> AC
+    LP -. "2. On-prem logs — periodic sync" .-> AC
+
+    classDef external fill:#F1EFE8,stroke:#5F5E5A,stroke-width:1px,color:#2C2C2A
+    classDef core fill:#EEEDFE,stroke:#3C3489,stroke-width:1px,color:#26215C
+    classDef judge fill:#FAEEDA,stroke:#854F0B,stroke-width:1px,color:#412402
+    classDef sync fill:#FAECE7,stroke:#993C1D,stroke-width:1px,color:#4A1B0C
+
+    class VSC,CLI,CC,GH,LDist,AID external
+    class LC,LD,LP,AC,AD,AP core
+    class LJ,AJ judge
+```
+</details>
 
 ## Design notes
 

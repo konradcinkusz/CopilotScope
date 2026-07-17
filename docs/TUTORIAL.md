@@ -6,7 +6,7 @@ situations.
 
 ## 1. Start CopilotScope
 
-Pick one of three ways to run it — all expose the same two things: an OTLP ingest
+Pick one of two ways to run it — both expose the same two things: an OTLP ingest
 endpoint on **:4318** and the dashboard UI.
 
 **A. .NET Aspire (recommended for development)** — requires .NET 8 SDK + Docker:
@@ -20,14 +20,7 @@ The Aspire dashboard opens in your browser. It shows four resources: `postgres`
 table directly from here), `collector` (pinned to http://localhost:4318) and
 `dashboard` (click its endpoint link to open the UI).
 
-**B. Single container (quickest demo, in-memory only):**
-
-```bash
-docker build -f Dockerfile.allinone -t copilotscope .
-docker run --rm -p 4318:4318 -p 5200:5200 copilotscope
-```
-
-**C. docker-compose (containers + Postgres + API key):**
+**B. docker-compose (containers + Postgres + API key):**
 
 ```bash
 docker compose up --build     # dashboard on :5200, ingest on :4318, key: dev-secret-123

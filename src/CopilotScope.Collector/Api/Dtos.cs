@@ -13,7 +13,8 @@ public sealed record SessionSummaryDto(
     double LinesAdded, double LinesRemoved,
     double TtftP50Ms, double TtftP95Ms,
     Dictionary<string, int> Models,
-    QualityReport Quality);
+    QualityReport Quality,
+    SessionKind Kind);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -42,7 +43,8 @@ public sealed record TopSessionDto(string Id, long TotalTokens, double QualitySc
 
 public static class DtoOverview
 {
-    /// <summary>Aggregates every known session into one "all my chats" summary.</summary>
+    /// <summary>Aggregates every user-visible session into one "all my chats" summary. Internal Copilot
+    /// helper calls (title generation, summarization) are excluded so they don't skew quality/token stats.</summary>
     public static OverviewDto Build(IReadOnlyCollection<CopilotSession> sessions, QualityEngine quality)
     {
         long inTok = 0, outTok = 0, cacheRead = 0, cacheCreate = 0;
@@ -52,9 +54,13 @@ public static class DtoOverview
         var daily = new Dictionary<DateOnly, (long In, long Out, int Sessions)>();
         var tops = new List<TopSessionDto>();
         var scores = new List<double>();
+        var counted = 0;
 
         foreach (var session in sessions)
         {
+            if (SessionClassifier.IsInternal(session.Kind)) continue;
+            counted++;
+
             var snap = session.Snapshot(x => new
             {
                 x.InputTokens, x.OutputTokens, x.CacheReadTokens, x.CacheCreationTokens,
@@ -84,7 +90,7 @@ public static class DtoOverview
         }
 
         return new OverviewDto(
-            sessions.Count,
+            counted,
             inTok, outTok, cacheRead, cacheCreate,
             chat, chatErr, tools, toolErr, turns,
             accepted, rejected, up, down,
@@ -112,7 +118,8 @@ public static class Dto
             x.LinesAdded, x.LinesRemoved,
             CopilotSession.Percentile(x.TtftMs, 0.5), CopilotSession.Percentile(x.TtftMs, 0.95),
             new Dictionary<string, int>(x.ModelCalls),
-            report));
+            report,
+            SessionClassifier.Classify(x)));
     }
 
     public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights)
