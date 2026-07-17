@@ -6,7 +6,8 @@ public sealed record TurnReport(
     int Index, DateTimeOffset Start, double DurationMs,
     int ChatCalls, int ChatErrors, int ToolCalls, int ToolErrors,
     long InputTokens, long OutputTokens, double AvgTtftMs,
-    double Score, List<string> Reasons);
+    double Score, List<string> Reasons,
+    string? Model = null);
 
 public sealed record TurnAnalysis(
     string Algorithm,
@@ -81,17 +82,33 @@ public static class SegmentAnalyzer
                 t.Index, t.Start, t.DurationMs,
                 t.ChatCalls, t.ChatErrors, t.ToolCalls, t.ToolErrors,
                 t.InputTokens, t.OutputTokens, t.AvgTtftMs,
-                Math.Clamp(score, 0, 1), reasons));
+                Math.Clamp(score, 0, 1), reasons, t.PrimaryModel));
         }
 
         var best = reports.OrderByDescending(r => r.Score).ThenBy(r => r.AvgTtftMs).First();
         var worst = reports.OrderBy(r => r.Score).ThenByDescending(r => r.AvgTtftMs).First();
 
-        var findings = new List<string>
+        var allClean = reports.All(r => r.Score >= 1.0);
+        var findings = new List<string>();
+
+        if (allClean)
         {
-            $"Best: turn {best.Index + 1} — {string.Join(", ", best.Reasons)}",
-            $"Worst: turn {worst.Index + 1} — {string.Join(", ", worst.Reasons)}"
-        };
+            findings.Add($"All {reports.Count} turn{(reports.Count == 1 ? "" : "s")} clean — no errors or latency outliers detected.");
+            // No best/worst when everything is uniform
+            return new TurnAnalysis("TFRA (turn-level friction & repair)", reports, null, null, findings);
+        }
+
+        // Highlight best/worst only when they differ meaningfully
+        var scoreDelta = best.Score - worst.Score;
+        if (scoreDelta > 0.05 || best.Index != worst.Index)
+        {
+            findings.Add($"Best: turn {best.Index + 1} — {string.Join(", ", best.Reasons)}");
+            findings.Add($"Worst: turn {worst.Index + 1} — {string.Join(", ", worst.Reasons)}");
+        }
+
+        var cleanCount = reports.Count(r => r.Score >= 1.0);
+        if (cleanCount > 0 && cleanCount < reports.Count)
+            findings.Add($"{cleanCount} of {reports.Count} turn{(reports.Count == 1 ? "" : "s")} had no issues.");
 
         var totalErrors = reports.Sum(r => r.ChatErrors + r.ToolErrors);
         var worstErrors = worst.ChatErrors + worst.ToolErrors;

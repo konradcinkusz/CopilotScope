@@ -223,9 +223,92 @@ html, body {
 .turn-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; }
 .turn-row.best  { background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .turn-row.worst { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.turn-row-compact { padding: 2px 6px; }
 .turn-idx { font-family: var(--mono); font-size: 12px; width: 34px; color: var(--dim); }
 .turn-score { font-family: var(--mono); font-size: 12px; width: 30px; text-align: right; }
 .turn-reasons { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 2; }
+
+.turns-clean-banner {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 12px; color: var(--ok);
+  padding: 8px 6px; margin: 4px 0;
+}
+.turns-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+
+.btn-sm { font-size: 10px; padding: 2px 7px; margin-left: auto; }
+.turns-toggle { color: var(--dim); }
+
+/* -------------------------------------------------- percentile / history bar */
+
+.percentile-bar {
+  position: relative; height: 6px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 3px; margin: 0 0 10px; overflow: visible;
+}
+.percentile-fill {
+  height: 100%; background: linear-gradient(90deg, var(--err), var(--copper) 40%, var(--ok));
+  border-radius: 3px; transition: width .4s;
+}
+.percentile-label {
+  position: absolute; right: 0; top: -18px;
+  font-family: var(--mono); font-size: 10px; color: var(--dim); white-space: nowrap;
+}
+
+/* mean-position marker on the VU bar (unfilled segment at population mean) */
+.vu-seg.vu-mean { background: color-mix(in srgb, var(--dim) 35%, transparent); border-color: var(--dim); }
+
+/* --------------------------------------------------- emitter badge variants */
+
+.emitter-vscode { color: #8fb8e8; border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
+.emitter-cli    { color: var(--copper); border-color: color-mix(in srgb, var(--copper) 55%, transparent); }
+
+/* -------------------------------------------- CLI N/A quality components */
+
+.component-na { opacity: .45; }
+.component-na .bar { display: none; }
+
+/* ----------------------------------------------- session maturity badges */
+
+.maturity-early       { color: var(--dim);    border-color: color-mix(in srgb, var(--dim) 55%, transparent); }
+.maturity-growing     { color: #8fb8e8;       border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
+.maturity-established { color: var(--ok);     border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+
+/* -------------------------------------------------- model timeline strip */
+
+.model-timeline { margin: 8px 0 4px; }
+.model-timeline-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; }
+.model-timeline-strip {
+  display: flex; gap: 2px; flex-wrap: wrap;
+}
+.model-seg {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 36px; height: 22px; border-radius: 4px;
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  cursor: default; position: relative; transition: opacity .15s;
+  flex: 1 0 36px; max-width: 80px;
+}
+.model-seg:hover { opacity: .85; }
+.model-seg.model-switch::before {
+  content: "▲"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; color: var(--copper);
+}
+.model-seg-label { pointer-events: none; }
+
+/* model colour palette */
+.model-sonnet  { background: color-mix(in srgb, #5b8ce8 60%, var(--panel-2)); color: #c9daf8; }
+.model-opus    { background: color-mix(in srgb, #c9a84c 60%, var(--panel-2)); color: #fde9b4; }
+.model-haiku   { background: color-mix(in srgb, #5fc97c 60%, var(--panel-2)); color: #c8f5d5; }
+.model-gpt4    { background: color-mix(in srgb, #74c7c0 60%, var(--panel-2)); color: #cff5f2; }
+.model-fable   { background: color-mix(in srgb, #a06cc7 60%, var(--panel-2)); color: #e8cff5; }
+.model-other   { background: color-mix(in srgb, var(--dim) 40%, var(--panel-2)); color: var(--text); }
+.model-unknown { background: var(--panel-2); color: var(--dim); }
+
+.model-switch-note { font-size: 10px; color: var(--copper); margin-top: 4px; }
+
+/* ---------------------------------------------- insight traffic lights */
+
+.insight-score.insight-traffic-good { color: var(--ok); }
+.insight-score.insight-traffic-warn { color: var(--copper); }
+.insight-score.insight-traffic-bad  { color: var(--err); }
 
 /* -------------------------------------------------------------- transcript */
 

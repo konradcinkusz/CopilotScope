@@ -165,9 +165,15 @@ api.MapGet("/sessions", (bool? includeInternal) =>
         .Select(s => Dto.Summary(s, quality))));
 
 api.MapGet("/sessions/{id}", (string id) =>
-    store.Get(Uri.UnescapeDataString(id)) is { } s
-        ? Results.Ok(Dto.Detail(s, quality, insightPipeline))
-        : Results.NotFound());
+{
+    if (store.Get(Uri.UnescapeDataString(id)) is not { } s) return Results.NotFound();
+    // Compute all user-session scores for percentile ranking (excludes internal helper calls).
+    var allScores = store.All
+        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0)
+        .Select(x => quality.Evaluate(x).Score)
+        .ToList();
+    return Results.Ok(Dto.Detail(s, quality, insightPipeline, allScores));
+});
 
 api.MapDelete("/sessions/{id}", async (string id, ILogger<Program> logger) =>
 {

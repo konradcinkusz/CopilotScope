@@ -1,11 +1,13 @@
 using CopilotScope.Dashboard.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace CopilotScope.Dashboard.Components.Pages;
 
 public partial class Home : ComponentBase, IDisposable
 {
     [Inject] public required CollectorClient Collector { get; set; }
+    [Inject] public required IJSRuntime JS { get; set; }
 
     private List<SessionSummaryDto>? _sessions;
     private SessionDetailDto? _detail;
@@ -14,6 +16,9 @@ public partial class Home : ComponentBase, IDisposable
     private bool _confirmDelete;
     private bool _showChat;
     private bool _showInternal;
+    private bool _showAllTurns;
+    private bool _chatWasOpen;
+    private ElementReference _chatScrollRef;
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>Parses one transcript entry into renderable chat messages (prompt side then response side).</summary>
@@ -36,6 +41,19 @@ public partial class Home : ComponentBase, IDisposable
     {
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showChat && !_chatWasOpen)
+        {
+            _chatWasOpen = true;
+            await JS.InvokeVoidAsync("scrollToBottom", _chatScrollRef);
+        }
+        else if (!_showChat)
+        {
+            _chatWasOpen = false;
+        }
     }
 
     private async Task PollAsync()
@@ -82,6 +100,7 @@ public partial class Home : ComponentBase, IDisposable
         _selectedId = id;
         _confirmDelete = false;
         _showChat = false;
+        _showAllTurns = false;
         _detail = await Collector.GetSessionAsync(id, _cts.Token);
     }
 
@@ -166,6 +185,88 @@ public partial class Home : ComponentBase, IDisposable
         return d.TotalSeconds < 60 ? $"{d.TotalSeconds:0} s temu"
              : d.TotalMinutes < 60 ? $"{d.TotalMinutes:0} min temu"
              : $"{d.TotalHours:0} h temu";
+    }
+
+    private static bool IsCli(SessionSummaryDto s) => s.EmitterKind == EmitterKind.CLI;
+
+    private static string EmitterLabel(EmitterKind k) => k switch
+    {
+        EmitterKind.VSCode => "VS Code",
+        EmitterKind.CLI => "CLI",
+        _ => ""
+    };
+
+    private static (string Label, string Css) SessionMaturity(int turns) => turns switch
+    {
+        0 or 1 => ("Early", "maturity-early"),
+        <= 4    => ("Growing", "maturity-growing"),
+        _       => ("Established", "maturity-established")
+    };
+
+    /// <summary>Maps a model name to a short display label for the timeline.</summary>
+    private static string ModelShortLabel(string? model)
+    {
+        if (model is null) return "?";
+        if (model.Contains("opus",    StringComparison.OrdinalIgnoreCase)) return "Opus";
+        if (model.Contains("sonnet",  StringComparison.OrdinalIgnoreCase)) return "Sonnet";
+        if (model.Contains("haiku",   StringComparison.OrdinalIgnoreCase)) return "Haiku";
+        if (model.Contains("gpt-4",   StringComparison.OrdinalIgnoreCase)) return "GPT-4";
+        if (model.Contains("gpt-3",   StringComparison.OrdinalIgnoreCase)) return "GPT-3";
+        if (model.Contains("fable",   StringComparison.OrdinalIgnoreCase)) return "Fable";
+        // Trim to first 8 chars for unknowns
+        return model.Length > 8 ? model[..8] : model;
+    }
+
+    /// <summary>CSS class for a model segment in the timeline strip.</summary>
+    private static string ModelSegCss(string? model)
+    {
+        if (model is null) return "model-unknown";
+        if (model.Contains("opus",   StringComparison.OrdinalIgnoreCase)) return "model-opus";
+        if (model.Contains("sonnet", StringComparison.OrdinalIgnoreCase)) return "model-sonnet";
+        if (model.Contains("haiku",  StringComparison.OrdinalIgnoreCase)) return "model-haiku";
+        if (model.Contains("gpt-4",  StringComparison.OrdinalIgnoreCase)) return "model-gpt4";
+        if (model.Contains("fable",  StringComparison.OrdinalIgnoreCase)) return "model-fable";
+        return "model-other";
+    }
+
+    /// <summary>CSS traffic-light class for an insight score (applied to the numeric label). Higher is better.</summary>
+    private static string InsightTrafficClass(double? score) => score switch
+    {
+        >= 0.7 => "insight-traffic-good",
+        >= 0.4 => "insight-traffic-warn",
+        not null => "insight-traffic-bad",
+        _ => ""
+    };
+
+    /// <summary>Returns the dot color name for an insight traffic light (feeds into dot-{class}).</summary>
+    private static string InsightDotClass(double? score) => score switch
+    {
+        >= 0.7 => "good",
+        >= 0.4 => "warn",
+        not null => "bad",
+        _ => "unknown"
+    };
+
+    /// <summary>CSS class for quality score color — uses percentile rank when history is available, absolute grade as fallback.</summary>
+    private static string RelativeGradeClass(QualityReportDto q) => q.PercentileRank switch
+    {
+        >= 0.75 => "grade-excellent",
+        >= 0.35 => "grade-good",
+        >= 0.15 => "grade-fair",
+        not null => "grade-poor",
+        _ => $"grade-{q.Grade}"
+    };
+
+    /// <summary>Subtitle line for quality score — shows percentile context when history is available.</summary>
+    private static string QualitySubtitle(QualityReportDto q)
+    {
+        if (q.PercentileRank is not { } pct || q.HistoryCount is not { } n || n < 3)
+            return $"/ 100 · {q.Grade} · confidence {(q.Confidence * 100):0}%";
+
+        var pctLabel = $"{(int)(pct * 100)}th percentile";
+        var zLabel = q.ZScore is { } z ? $" ({(z >= 0 ? "+" : "")}{z:0.0}σ)" : "";
+        var meanLabel = q.HistoryMean?.ToString("0.0") ?? "?";
+        return $"/ 100 · {pctLabel}{zLabel} vs last {n} sessions (mean {meanLabel})";
     }
 
     public void Dispose()

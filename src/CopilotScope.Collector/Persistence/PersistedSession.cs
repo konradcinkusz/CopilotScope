@@ -32,7 +32,8 @@ public sealed record PersistedSession(
     List<PersistedTurn> TurnStats,
     List<double>? SurvivalFourGram = null,
     List<double>? SurvivalNoRevert = null,
-    Dictionary<string, PersistedModelStat>? ModelUsage = null)
+    Dictionary<string, PersistedModelStat>? ModelUsage = null,
+    EmitterKind EmitterKind = EmitterKind.Unknown)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -52,11 +53,12 @@ public sealed record PersistedSession(
         new List<TranscriptEntry>(x.Transcript),
         x.TurnList.Select(t => new PersistedTurn(t.TraceId, t.Index, t.Start, t.End,
             t.ChatCalls, t.ChatErrors, t.ToolCalls, t.ToolErrors,
-            t.InputTokens, t.OutputTokens, t.TtftTotalMs, t.TtftCount)).ToList(),
+            t.InputTokens, t.OutputTokens, t.TtftTotalMs, t.TtftCount, t.PrimaryModel)).ToList(),
         new List<double>(x.SurvivalFourGram),
         new List<double>(x.SurvivalNoRevert),
         x.ModelUsage.ToDictionary(kv => kv.Key, kv => new PersistedModelStat(
-            kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens))));
+            kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens)),
+        x.EmitterKind));
 
     public CopilotSession ToSession()
     {
@@ -64,6 +66,7 @@ public sealed record PersistedSession(
         {
             Id = Id,
             VsCodeSessionId = VsCodeSessionId,
+            EmitterKind = EmitterKind,
             AgentName = AgentName,
             Repository = Repository,
             Branch = Branch,
@@ -106,7 +109,7 @@ public sealed record PersistedSession(
                 ChatCalls = t.ChatCalls, ChatErrors = t.ChatErrors,
                 ToolCalls = t.ToolCalls, ToolErrors = t.ToolErrors,
                 InputTokens = t.InputTokens, OutputTokens = t.OutputTokens,
-                TtftTotalMs = t.TtftTotalMs, TtftCount = t.TtftCount
+                TtftTotalMs = t.TtftTotalMs, TtftCount = t.TtftCount, PrimaryModel = t.PrimaryModel
             };
             s.TurnsByTrace[t.TraceId] = turn;
             s.TurnList.Add(turn);
@@ -124,4 +127,5 @@ public sealed record PersistedModelStat(int Calls, long InputTokens, long Output
 public sealed record PersistedTurn(
     string TraceId, int Index, DateTimeOffset Start, DateTimeOffset End,
     int ChatCalls, int ChatErrors, int ToolCalls, int ToolErrors,
-    long InputTokens, long OutputTokens, double TtftTotalMs, int TtftCount);
+    long InputTokens, long OutputTokens, double TtftTotalMs, int TtftCount,
+    string? PrimaryModel = null);
