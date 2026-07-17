@@ -85,6 +85,8 @@
                         {
                             <span class="status-chip emitter-@s.EmitterKind.ToString().ToLower()">@EmitterLabel(s.EmitterKind)</span>
                         }
+                        @{ var maturity = SessionMaturity(s.Turns); }
+                        <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
                         @if (_confirmDelete)
                         {
                             <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
@@ -173,6 +175,35 @@
                         }
                     </div>
 
+                    @{
+                        var turnsWithModel = _detail.Turns.Turns.Where(t => t.Model is not null).ToList();
+                        var hasModelData = turnsWithModel.Count > 0;
+                        var distinctModels = _detail.Turns.Turns.Select(t => t.Model).Distinct().Where(m => m != null).ToList();
+                        var modelSwitchOccurred = distinctModels.Count > 1;
+                    }
+                    @if (hasModelData)
+                    {
+                        <div class="model-timeline" title="Model used per turn — each block is one turn">
+                            <div class="model-timeline-label">Model timeline</div>
+                            <div class="model-timeline-strip">
+                                @{ string? prevModel = null; }
+                                @foreach (var t in _detail.Turns.Turns)
+                                {
+                                    var isSwitch = prevModel is not null && t.Model is not null && t.Model != prevModel;
+                                    <div class="model-seg @ModelSegCss(t.Model) @(isSwitch ? "model-switch" : "")"
+                                         title="Turn @(t.Index + 1): @(t.Model ?? "(no model)")">
+                                        <span class="model-seg-label">@ModelShortLabel(t.Model)</span>
+                                    </div>
+                                    @{ prevModel = t.Model ?? prevModel; }
+                                }
+                            </div>
+                            @if (modelSwitchOccurred)
+                            {
+                                <div class="model-switch-note">Model changed during session — switch points marked with ▲</div>
+                            }
+                        </div>
+                    }
+
                     @if (allClean)
                     {
                         <div class="turns-clean-banner">
@@ -242,10 +273,16 @@
                     {
                         <div class="insight @(r.Status == "no-data" ? "muted" : "")">
                             <div class="insight-head">
-                                <span class="insight-name">@r.Name</span>
+                                <span class="insight-name">
+                                    @if (r.Score.HasValue && r.Status != "no-data")
+                                    {
+                                        <span class="dot dot-@InsightDotClass(r.Score)"></span>
+                                    }
+                                    @r.Name
+                                </span>
                                 @if (r.Score is { } sc)
                                 {
-                                    <span class="insight-score">@((sc * 100).ToString("0"))</span>
+                                    <span class="insight-score @InsightTrafficClass(r.Score)">@((sc * 100).ToString("0"))</span>
                                 }
                             </div>
                             <div class="insight-algo">@r.Algorithm</div>

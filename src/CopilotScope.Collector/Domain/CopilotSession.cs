@@ -147,7 +147,7 @@ public sealed class CopilotSession
                     ChatCalls = t.ChatCalls, ChatErrors = t.ChatErrors,
                     ToolCalls = t.ToolCalls, ToolErrors = t.ToolErrors,
                     InputTokens = t.InputTokens, OutputTokens = t.OutputTokens,
-                    TtftTotalMs = t.TtftTotalMs, TtftCount = t.TtftCount
+                    TtftTotalMs = t.TtftTotalMs, TtftCount = t.TtftCount, PrimaryModel = t.PrimaryModel
                 };
                 s.TurnsByTrace[t.TraceId] = turn;
                 s.TurnList.Add(turn);
@@ -228,6 +228,7 @@ public sealed class TurnStat
     public long OutputTokens { get; set; }
     public double TtftTotalMs { get; set; }
     public int TtftCount { get; set; }
+    public string? PrimaryModel { get; set; }
     public double AvgTtftMs => TtftCount > 0 ? TtftTotalMs / TtftCount : 0;
     public double DurationMs => Math.Max(0, (End - Start).TotalMilliseconds);
 }

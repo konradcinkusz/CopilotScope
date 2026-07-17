@@ -6,7 +6,8 @@ public sealed record TurnReport(
     int Index, DateTimeOffset Start, double DurationMs,
     int ChatCalls, int ChatErrors, int ToolCalls, int ToolErrors,
     long InputTokens, long OutputTokens, double AvgTtftMs,
-    double Score, List<string> Reasons);
+    double Score, List<string> Reasons,
+    string? Model = null);
 
 public sealed record TurnAnalysis(
     string Algorithm,
@@ -81,7 +82,7 @@ public static class SegmentAnalyzer
                 t.Index, t.Start, t.DurationMs,
                 t.ChatCalls, t.ChatErrors, t.ToolCalls, t.ToolErrors,
                 t.InputTokens, t.OutputTokens, t.AvgTtftMs,
-                Math.Clamp(score, 0, 1), reasons));
+                Math.Clamp(score, 0, 1), reasons, t.PrimaryModel));
         }
 
         var best = reports.OrderByDescending(r => r.Score).ThenBy(r => r.AvgTtftMs).First();

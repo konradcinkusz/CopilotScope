@@ -89,7 +89,8 @@ public sealed record TurnReportDto(
     int Index, DateTimeOffset Start, double DurationMs,
     int ChatCalls, int ChatErrors, int ToolCalls, int ToolErrors,
     long InputTokens, long OutputTokens, double AvgTtftMs,
-    double Score, List<string> Reasons);
+    double Score, List<string> Reasons,
+    string? Model = null);
 
 public sealed record ToolStatDto(string Name, int Calls, int Errors, double AvgMs);
 

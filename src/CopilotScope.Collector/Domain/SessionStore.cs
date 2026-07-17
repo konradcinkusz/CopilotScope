@@ -151,6 +151,7 @@ public sealed class SessionStore
                         turn.InputTokens += span.AttrLong(Sem.InputTokens) ?? 0;
                         turn.OutputTokens += span.AttrLong(Sem.OutputTokens) ?? 0;
                         if (ttftValue is { } t2 && t2 > 0) { turn.TtftTotalMs += t2; turn.TtftCount++; }
+                        turn.PrimaryModel ??= model;
                     }
 
                     // Prompt/response content is only present when captureContent is on.

@@ -2,6 +2,11 @@
 
 [![build containers](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-e0a458.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=e0a458)](https://github.com/konradcinkusz/copilotscope/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilotscope/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilotscope?style=social)](https://github.com/konradcinkusz/copilotscope/stargazers)
+[![Windows 10+](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows&logoColor=white)](https://github.com/konradcinkusz/copilotscope#quick-start--no-clone-just-pull)
+[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
 Observability for **GitHub Copilot** chat sessions: an OpenTelemetry collector, a
 Postgres store and a Blazor dashboard with a real-time session quality score —

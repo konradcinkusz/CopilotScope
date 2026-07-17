@@ -196,6 +196,57 @@ public partial class Home : ComponentBase, IDisposable
         _ => ""
     };
 
+    private static (string Label, string Css) SessionMaturity(int turns) => turns switch
+    {
+        0 or 1 => ("Early", "maturity-early"),
+        <= 4    => ("Growing", "maturity-growing"),
+        _       => ("Established", "maturity-established")
+    };
+
+    /// <summary>Maps a model name to a short display label for the timeline.</summary>
+    private static string ModelShortLabel(string? model)
+    {
+        if (model is null) return "?";
+        if (model.Contains("opus",    StringComparison.OrdinalIgnoreCase)) return "Opus";
+        if (model.Contains("sonnet",  StringComparison.OrdinalIgnoreCase)) return "Sonnet";
+        if (model.Contains("haiku",   StringComparison.OrdinalIgnoreCase)) return "Haiku";
+        if (model.Contains("gpt-4",   StringComparison.OrdinalIgnoreCase)) return "GPT-4";
+        if (model.Contains("gpt-3",   StringComparison.OrdinalIgnoreCase)) return "GPT-3";
+        if (model.Contains("fable",   StringComparison.OrdinalIgnoreCase)) return "Fable";
+        // Trim to first 8 chars for unknowns
+        return model.Length > 8 ? model[..8] : model;
+    }
+
+    /// <summary>CSS class for a model segment in the timeline strip.</summary>
+    private static string ModelSegCss(string? model)
+    {
+        if (model is null) return "model-unknown";
+        if (model.Contains("opus",   StringComparison.OrdinalIgnoreCase)) return "model-opus";
+        if (model.Contains("sonnet", StringComparison.OrdinalIgnoreCase)) return "model-sonnet";
+        if (model.Contains("haiku",  StringComparison.OrdinalIgnoreCase)) return "model-haiku";
+        if (model.Contains("gpt-4",  StringComparison.OrdinalIgnoreCase)) return "model-gpt4";
+        if (model.Contains("fable",  StringComparison.OrdinalIgnoreCase)) return "model-fable";
+        return "model-other";
+    }
+
+    /// <summary>CSS traffic-light class for an insight score (applied to the numeric label). Higher is better.</summary>
+    private static string InsightTrafficClass(double? score) => score switch
+    {
+        >= 0.7 => "insight-traffic-good",
+        >= 0.4 => "insight-traffic-warn",
+        not null => "insight-traffic-bad",
+        _ => ""
+    };
+
+    /// <summary>Returns the dot color name for an insight traffic light (feeds into dot-{class}).</summary>
+    private static string InsightDotClass(double? score) => score switch
+    {
+        >= 0.7 => "good",
+        >= 0.4 => "warn",
+        not null => "bad",
+        _ => "unknown"
+    };
+
     /// <summary>CSS class for quality score color — uses percentile rank when history is available, absolute grade as fallback.</summary>
     private static string RelativeGradeClass(QualityReportDto q) => q.PercentileRank switch
     {
