@@ -72,6 +72,13 @@
             var s = _detail.Summary;
             var q = s.Quality;
 
+            <div class="view-mode-row">
+                <span class="view-mode-label">View:</span>
+                <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" title="Session quality score only" @onclick="() => _viewMode = ViewMode.Basic">Basic</button>
+                <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" title="All panels — only tiles with actual data" @onclick="() => _viewMode = ViewMode.Advanced">Advanced</button>
+                <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" title="All panels including no-data placeholders" @onclick="() => _viewMode = ViewMode.Full">Full</button>
+            </div>
+
             <div class="panel vu-panel">
                 <div class="panel-head">
                     <div>
@@ -140,24 +147,62 @@
                 </div>
             </div>
 
-            <div class="tiles">
-                <div class="tile" data-tip="Cumulative prompt tokens sent across all LLM calls in this session — includes cached tokens re-sent each call. See Docs → Token semantics for why this is often large." tabindex="0"><b>@FmtTokens(s.InputTokens)</b><span>tokens in</span></div>
-                <div class="tile" data-tip="Text the model generated for you. Main driver of response time and cost. Source: gen_ai.usage.output_tokens (VS Code + CLI)." tabindex="0"><b>@FmtTokens(s.OutputTokens)</b><span>tokens out</span></div>
-                <div class="tile" data-tip="Prompt tokens served from the model's cache — a subset of tokens in, not additional. High ratio means context is being reused efficiently across calls. (VS Code + CLI, model-dependent)" tabindex="0"><b>@FmtTokens(s.CacheReadTokens)</b><span>cache read</span></div>
-                <div class="tile" data-tip="Tokens actually freshly computed by the model: tokens in − cache read. This is the GPU work that happened — the rest was served from cache at negligible cost." tabindex="0"><b>@FmtTokens(Math.Max(0, s.InputTokens - s.CacheReadTokens))</b><span>net compute</span></div>
-                <div class="tile" data-tip="Median wait before the first token appears — the 'how snappy does it feel' number. Under ~1 s feels instant; over 2 s breaks flow. (VS Code + CLI)" tabindex="0"><b>@s.TtftP50Ms.ToString("0") ms</b><span>TTFT p50</span></div>
-                <div class="tile" data-tip="95th percentile of first-token wait — the slow outliers. A high p95 with a good p50 means occasional stalls. (VS Code + CLI)" tabindex="0"><b>@s.TtftP95Ms.ToString("0") ms</b><span>TTFT p95</span></div>
-                <div class="tile" data-tip="How many times the model was called (one turn often makes several). ✗ counts failed calls — rate limits, timeouts. (VS Code + CLI)" tabindex="0"><b>@s.ChatCalls<i>@(s.ChatErrors > 0 ? $" ({s.ChatErrors}✗)" : "")</i></b><span>LLM calls</span></div>
-                <div class="tile" data-tip="Tool executions the agent performed: file reads/edits, terminal commands, searches. ✗ counts tool failures. (VS Code + CLI)" tabindex="0"><b>@s.ToolCalls<i>@(s.ToolErrors > 0 ? $" ({s.ToolErrors}✗)" : "")</i></b><span>tool calls</span></div>
-                <div class="tile" data-tip="Conversation turns vs agent invocations. Many turns per invocation can mean the agent needed a lot of back-and-forth to finish. (VS Code + CLI)" tabindex="0"><b>@s.Turns / @s.AgentInvocations</b><span>turns / invocations</span></div>
-                @if (!IsCli(s))
-                {
-                    <div class="tile" data-tip="Suggested edits you kept (✓) vs threw away (✗) — the most direct 'was it useful' signal. Editor-only: VS Code emits this, the CLI does not." tabindex="0"><b>@s.EditsAccepted✓ @s.EditsRejected✗</b><span>edits</span></div>
-                    <div class="tile" data-tip="Your explicit thumbs up/down clicks in the chat UI. VS Code only — the CLI has no feedback buttons." tabindex="0"><b>👍@s.ThumbsUp 👎@s.ThumbsDown</b><span>feedback</span></div>
-                    <div class="tile" data-tip="Lines of code added/removed by accepted suggestions. VS Code only — not emitted by the CLI." tabindex="0"><b>+@s.LinesAdded.ToString("0") −@s.LinesRemoved.ToString("0")</b><span>lines of code</span></div>
-                }
-            </div>
+            @if (_viewMode != ViewMode.Basic)
+            {
+                <div class="tiles">
+                    @if (ShowTile("tokens_in", s))
+                    {
+                        <div class="tile" data-tip="Cumulative prompt tokens sent across all LLM calls in this session — includes cached tokens re-sent each call. See Docs → Token semantics for why this is often large." tabindex="0"><b>@FmtTokens(s.InputTokens)</b><span>tokens in</span></div>
+                    }
+                    @if (ShowTile("tokens_out", s))
+                    {
+                        <div class="tile" data-tip="Text the model generated for you. Main driver of response time and cost. Source: gen_ai.usage.output_tokens (VS Code + CLI)." tabindex="0"><b>@FmtTokens(s.OutputTokens)</b><span>tokens out</span></div>
+                    }
+                    @if (ShowTile("cache_read", s))
+                    {
+                        <div class="tile" data-tip="Prompt tokens served from the model's cache — a subset of tokens in, not additional. High ratio means context is being reused efficiently across calls. (VS Code + CLI, model-dependent)" tabindex="0"><b>@FmtTokens(s.CacheReadTokens)</b><span>cache read</span></div>
+                    }
+                    @if (ShowTile("net_compute", s))
+                    {
+                        <div class="tile" data-tip="Tokens actually freshly computed by the model: tokens in − cache read. This is the GPU work that happened — the rest was served from cache at negligible cost." tabindex="0"><b>@FmtTokens(Math.Max(0, s.InputTokens - s.CacheReadTokens))</b><span>net compute</span></div>
+                    }
+                    @if (ShowTile("ttft_p50", s))
+                    {
+                        <div class="tile" data-tip="Median wait before the first token appears — the 'how snappy does it feel' number. Under ~1 s feels instant; over 2 s breaks flow. (VS Code + CLI)" tabindex="0"><b>@s.TtftP50Ms.ToString("0") ms</b><span>TTFT p50</span></div>
+                    }
+                    @if (ShowTile("ttft_p95", s))
+                    {
+                        <div class="tile" data-tip="95th percentile of first-token wait — the slow outliers. A high p95 with a good p50 means occasional stalls. (VS Code + CLI)" tabindex="0"><b>@s.TtftP95Ms.ToString("0") ms</b><span>TTFT p95</span></div>
+                    }
+                    @if (ShowTile("llm_calls", s))
+                    {
+                        <div class="tile" data-tip="How many times the model was called (one turn often makes several). ✗ counts failed calls — rate limits, timeouts. (VS Code + CLI)" tabindex="0"><b>@s.ChatCalls<i>@(s.ChatErrors > 0 ? $" ({s.ChatErrors}✗)" : "")</i></b><span>LLM calls</span></div>
+                    }
+                    @if (ShowTile("tool_calls", s))
+                    {
+                        <div class="tile" data-tip="Tool executions the agent performed: file reads/edits, terminal commands, searches. ✗ counts tool failures. (VS Code + CLI)" tabindex="0"><b>@s.ToolCalls<i>@(s.ToolErrors > 0 ? $" ({s.ToolErrors}✗)" : "")</i></b><span>tool calls</span></div>
+                    }
+                    @if (ShowTile("turns", s))
+                    {
+                        <div class="tile" data-tip="Conversation turns vs agent invocations. Many turns per invocation can mean the agent needed a lot of back-and-forth to finish. (VS Code + CLI)" tabindex="0"><b>@s.Turns / @s.AgentInvocations</b><span>turns / invocations</span></div>
+                    }
+                    @if (ShowTile("edits", s))
+                    {
+                        <div class="tile" data-tip="Suggested edits you kept (✓) vs threw away (✗) — the most direct 'was it useful' signal. Editor-only: VS Code emits this, the CLI does not." tabindex="0"><b>@s.EditsAccepted✓ @s.EditsRejected✗</b><span>edits</span></div>
+                    }
+                    @if (ShowTile("thumbs", s))
+                    {
+                        <div class="tile" data-tip="Your explicit thumbs up/down clicks in the chat UI. VS Code only — the CLI has no feedback buttons." tabindex="0"><b>👍@s.ThumbsUp 👎@s.ThumbsDown</b><span>feedback</span></div>
+                    }
+                    @if (ShowTile("loc", s))
+                    {
+                        <div class="tile" data-tip="Lines of code added/removed by accepted suggestions. VS Code only — not emitted by the CLI." tabindex="0"><b>+@s.LinesAdded.ToString("0") −@s.LinesRemoved.ToString("0")</b><span>lines of code</span></div>
+                    }
+                </div>
+            }
 
+            @if (_viewMode != ViewMode.Basic && (_viewMode == ViewMode.Full || _detail.Turns.Turns.Count > 0))
+            {
             <div class="panel">
                 <div class="panel-label">Turn analysis — @_detail.Turns.Algorithm</div>
                 @if (_detail.Turns.Turns.Count == 0)
@@ -264,44 +309,56 @@
                     }
                 }
             </div>
+            }
 
-            <div class="panel">
-                <div class="panel-label">Insights — algorithm reports</div>
-                <div class="insights">
-                    @foreach (var r in _detail.Insights)
-                    {
-                        <div class="insight @(r.Status == "no-data" ? "muted" : "")">
-                            <div class="insight-head">
-                                <span class="insight-name">
-                                    @if (r.Score.HasValue && r.Status != "no-data")
+            @if (_viewMode != ViewMode.Basic)
+            {
+                @{
+                    var visInsights = _detail.Insights.Where(ShowInsight).ToList();
+                }
+                @if (visInsights.Count > 0)
+                {
+                    <div class="panel">
+                        <div class="panel-label">Insights — algorithm reports</div>
+                        <div class="insights">
+                            @foreach (var r in visInsights)
+                            {
+                                <div class="insight @(r.Status == "no-data" ? "muted" : "")">
+                                    <div class="insight-head">
+                                        <span class="insight-name">
+                                            @if (r.Score.HasValue && r.Status != "no-data")
+                                            {
+                                                <span class="dot dot-@InsightDotClass(r.Score)"></span>
+                                            }
+                                            @r.Name
+                                        </span>
+                                        @if (r.Score is { } sc)
+                                        {
+                                            <span class="insight-score @InsightTrafficClass(r.Score)">@((sc * 100).ToString("0"))</span>
+                                        }
+                                    </div>
+                                    <div class="insight-algo">@r.Algorithm</div>
+                                    @if (r.Score is { } sv)
                                     {
-                                        <span class="dot dot-@InsightDotClass(r.Score)"></span>
+                                        <div class="bar"><span style="width:@(Pct(sv))%"></span></div>
                                     }
-                                    @r.Name
-                                </span>
-                                @if (r.Score is { } sc)
-                                {
-                                    <span class="insight-score @InsightTrafficClass(r.Score)">@((sc * 100).ToString("0"))</span>
-                                }
-                            </div>
-                            <div class="insight-algo">@r.Algorithm</div>
-                            @if (r.Score is { } sv)
-                            {
-                                <div class="bar"><span style="width:@(Pct(sv))%"></span></div>
-                            }
-                            @foreach (var m in r.Metrics)
-                            {
-                                <div class="kv"><span>@m.Label</span><b>@m.Value</b></div>
-                            }
-                            @foreach (var f in r.Findings)
-                            {
-                                <div class="insight-finding">@f</div>
+                                    @foreach (var m in r.Metrics)
+                                    {
+                                        <div class="kv"><span>@m.Label</span><b>@m.Value</b></div>
+                                    }
+                                    @foreach (var f in r.Findings)
+                                    {
+                                        <div class="insight-finding">@f</div>
+                                    }
+                                </div>
                             }
                         </div>
-                    }
-                </div>
-            </div>
+                    </div>
+                }
+            }
 
+            @if (_viewMode != ViewMode.Basic)
+            {
             <div class="columns">
                 <div class="panel">
                     <div class="panel-label">Tools</div>
@@ -355,47 +412,54 @@
                     <div class="kv"><span>started</span><b>@s.FirstSeen.ToLocalTime().ToString("HH:mm:ss")</b></div>
                 </div>
             </div>
+            }
 
-            <div class="panel">
-                <div class="panel-head">
-                    <div class="panel-label">Prompts &amp; responses</div>
-                    @if (_detail.Transcript.Count > 0)
+            @if (_viewMode != ViewMode.Basic)
+            {
+                <div class="panel">
+                    <div class="panel-head">
+                        <div class="panel-label">Prompts &amp; responses</div>
+                        @if (_detail.Transcript.Count > 0)
+                        {
+                            <button class="btn" @onclick="() => _showChat = true">Open conversation</button>
+                        }
+                    </div>
+                    @if (_detail.Transcript.Count == 0)
                     {
-                        <button class="btn" @onclick="() => _showChat = true">Open conversation</button>
+                        <div class="empty">
+                            No captured content — Copilot only sends prompt/response text when content capture is enabled on the client, and only for chats started after enabling it.
+                            <code>VS Code: "github.copilot.chat.otel.captureContent": true</code>
+                            <code>CLI: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true (COPILOT_OTEL_CAPTURE_CONTENT does not exist)</code>
+                        </div>
                     }
-                </div>
-                @if (_detail.Transcript.Count == 0)
-                {
-                    <div class="empty">
-                        No captured content — Copilot only sends prompt/response text when content capture is enabled on the client, and only for chats started after enabling it.
-                        <code>VS Code: "github.copilot.chat.otel.captureContent": true</code>
-                        <code>CLI: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true (COPILOT_OTEL_CAPTURE_CONTENT does not exist)</code>
-                    </div>
-                }
-                else
-                {
-                    <div class="chat-summary">
-                        <span class="ok-note">Content capture is active ✓</span>
-                        @_detail.Transcript.Count exchange(s) recorded, latest at
-                        @_detail.Transcript[^1].Time.ToLocalTime().ToString("HH:mm:ss").
-                        Open the read-only conversation view to browse them.
-                    </div>
-                }
-            </div>
-
-            <div class="panel">
-                <div class="panel-label">Event feed (live)</div>
-                <div class="feed">
-                    @foreach (var e in _detail.Events)
+                    else
                     {
-                        <div class="feed-row kind-@e.Kind">
-                            <span class="feed-time">@e.Time.ToLocalTime().ToString("HH:mm:ss")</span>
-                            <span class="feed-kind">@e.Kind</span>
-                            <span class="feed-text">@e.Summary</span>
+                        <div class="chat-summary">
+                            <span class="ok-note">Content capture is active ✓</span>
+                            @_detail.Transcript.Count exchange(s) recorded, latest at
+                            @_detail.Transcript[^1].Time.ToLocalTime().ToString("HH:mm:ss").
+                            Open the read-only conversation view to browse them.
                         </div>
                     }
                 </div>
-            </div>
+            }
+
+            @if (_viewMode != ViewMode.Basic && (_viewMode == ViewMode.Full || _detail.Events.Count > 0))
+            {
+                <div class="panel">
+                    <div class="panel-label">Event feed (live)</div>
+                    <div class="feed">
+                        @foreach (var e in _detail.Events)
+                        {
+                            <div class="feed-row kind-@e.Kind">
+                                <span class="feed-time">@e.Time.ToLocalTime().ToString("HH:mm:ss")</span>
+                                <span class="feed-kind">@e.Kind</span>
+                                <span class="feed-text">@e.Summary</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
             @if (_showChat)
             {
                 <div class="modal-backdrop" @onclick="() => _showChat = false">
