@@ -52,8 +52,32 @@ html, body {
 .rail { display: flex; flex-direction: column; gap: 8px; }
 .rail-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
+.rail-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .toggle-internal { display: flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: normal; font-size: 10px; cursor: pointer; }
 .toggle-internal input { cursor: pointer; }
+
+/* repo left-border accent — 8-hue palette deterministic from repo name hash */
+.repo-l0 { border-left: 3px solid #5b9bd5; }
+.repo-l1 { border-left: 3px solid #e07b45; }
+.repo-l2 { border-left: 3px solid #a86dc5; }
+.repo-l3 { border-left: 3px solid #4ba882; }
+.repo-l4 { border-left: 3px solid #d45f8e; }
+.repo-l5 { border-left: 3px solid #c9b44f; }
+.repo-l6 { border-left: 3px solid #6b8ed4; }
+.repo-l7 { border-left: 3px solid #75a85f; }
+
+.repo-chip {
+  font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .8px;
+  padding: 1px 5px; border-radius: 3px; margin-right: 4px; border: 1px solid;
+}
+.repo-c0 { color: #5b9bd5; border-color: color-mix(in srgb, #5b9bd5 40%, transparent); background: color-mix(in srgb, #5b9bd5 10%, transparent); }
+.repo-c1 { color: #e07b45; border-color: color-mix(in srgb, #e07b45 40%, transparent); background: color-mix(in srgb, #e07b45 10%, transparent); }
+.repo-c2 { color: #a86dc5; border-color: color-mix(in srgb, #a86dc5 40%, transparent); background: color-mix(in srgb, #a86dc5 10%, transparent); }
+.repo-c3 { color: #4ba882; border-color: color-mix(in srgb, #4ba882 40%, transparent); background: color-mix(in srgb, #4ba882 10%, transparent); }
+.repo-c4 { color: #d45f8e; border-color: color-mix(in srgb, #d45f8e 40%, transparent); background: color-mix(in srgb, #d45f8e 10%, transparent); }
+.repo-c5 { color: #c9b44f; border-color: color-mix(in srgb, #c9b44f 40%, transparent); background: color-mix(in srgb, #c9b44f 10%, transparent); }
+.repo-c6 { color: #6b8ed4; border-color: color-mix(in srgb, #6b8ed4 40%, transparent); background: color-mix(in srgb, #6b8ed4 10%, transparent); }
+.repo-c7 { color: #75a85f; border-color: color-mix(in srgb, #75a85f 40%, transparent); background: color-mix(in srgb, #75a85f 10%, transparent); }
 
 .session-kind-badge {
   margin-left: 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 1px;

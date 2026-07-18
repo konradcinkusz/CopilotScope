@@ -25,10 +25,16 @@
     <aside class="rail">
         <div class="rail-title">
             Sessions
-            <label class="toggle-internal">
-                <input type="checkbox" checked="@_showInternal" @onchange="e => ToggleShowInternalAsync((bool)e.Value!)" />
-                Show internal/debug sessions
-            </label>
+            <div class="rail-controls">
+                <label class="toggle-internal">
+                    <input type="checkbox" checked="@_showInternal" @onchange="e => ToggleShowInternalAsync((bool)e.Value!)" />
+                    Internal
+                </label>
+                <label class="toggle-internal">
+                    <input type="checkbox" checked="@_repoNormalization" @onchange="e => { _repoNormalization = (bool)e.Value!; }" />
+                    Normalize by repo
+                </label>
+            </div>
         </div>
         @if (_sessions is null)
         {
@@ -46,7 +52,8 @@
         {
             @foreach (var s in _sessions)
             {
-                <button class="session @(s.Id == _selectedId ? "active" : "")" @onclick="() => SelectAsync(s.Id)">
+                var ri = RepoColorIndex(s.Repository);
+                <button class="session @(s.Id == _selectedId ? "active" : "") @(ri >= 0 ? $"repo-l{ri}" : "")" @onclick="() => SelectAsync(s.Id)">
                     <span class="session-id">
                         <span class="dot status-dot-@SessionStatus(s).Css" title="@SessionStatus(s).Label"></span>
                         @s.Id
@@ -55,8 +62,11 @@
                             <span class="session-kind-badge">@KindLabel(s.Kind)</span>
                         }
                     </span>
-                    <span class="session-meta">@s.ChatCalls chat · @s.ToolCalls tools · @Ago(s.LastSeen)</span>
-                    <span class="session-score @RelativeGradeClass(s.Quality)">@s.Quality.Score.ToString("0")</span>
+                    <span class="session-meta">
+                        @if (RepoShortName(s.Repository) is { } rn) { <span class="repo-chip repo-c@(ri)">@rn</span> }
+                        @s.ChatCalls chat · @s.ToolCalls tools · @Ago(s.LastSeen)
+                    </span>
+                    <span class="session-score @RelativeGradeClass(s.Quality, _repoNormalization)">@s.Quality.Score.ToString("0")</span>
                 </button>
             }
         }
@@ -76,7 +86,7 @@
                 <div class="panel-head">
                     <div>
                         <div class="panel-label">Session quality</div>
-                        <div class="vu-score @RelativeGradeClass(q)">@q.Score.ToString("0.0") <small>@QualitySubtitle(q, s.Repository)</small></div>
+                        <div class="vu-score @RelativeGradeClass(q, _repoNormalization)">@q.Score.ToString("0.0") <small>@QualitySubtitle(q, s.Repository, _repoNormalization)</small></div>
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
@@ -99,7 +109,7 @@
                         }
                     </div>
                 </div>
-                <div class="vu" title="@(q.PercentileRank.HasValue ? $"Raw score {q.Score:0.0}/100 · {(int)(q.PercentileRank.Value * 100)}th percentile vs {q.HistoryCount} {(s.Repository != null ? "repo " : "")}sessions" : $"Raw score {q.Score:0.0}/100")">
+                <div class="vu" title="@(q.PercentileRank.HasValue && _repoNormalization ? $"Raw score {q.Score:0.0}/100 · {(int)(q.PercentileRank.Value * 100)}th percentile vs {q.HistoryCount} {(s.Repository != null ? "repo " : "")}sessions" : $"Raw score {q.Score:0.0}/100")">
                     @for (var i = 0; i < 40; i++)
                     {
                         var lit = q.Score / 100.0 * 40 > i;
@@ -108,7 +118,7 @@
                         <span class="vu-seg @(lit ? SegClass(i) : "") @(isMean && !lit ? "vu-mean" : "")"></span>
                     }
                 </div>
-                @if (q.PercentileRank.HasValue && q.HistoryCount >= 3)
+                @if (q.PercentileRank.HasValue && q.HistoryCount >= 3 && _repoNormalization)
                 {
                     <div class="percentile-bar">
                         <div class="percentile-fill" style="width:@(Pct(q.PercentileRank.Value))%"></div>
