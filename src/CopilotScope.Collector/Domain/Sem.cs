@@ -1,16 +1,20 @@
 namespace CopilotScope.Collector.Domain;
 
 /// <summary>
-/// Signal names and attribute keys emitted by Copilot Chat in VS Code.
-/// Source: VS Code docs "Monitor agent usage with OpenTelemetry" +
-/// OTel GenAI Semantic Conventions. Legacy copilot_chat.* keys are kept
-/// because they are dual-emitted with no sunset date.
+/// Signal names and attribute keys emitted by AI coding assistants via OpenTelemetry.
+/// Sources: VS Code Copilot ("Monitor agent usage with OpenTelemetry"), Copilot CLI,
+/// Claude Code, Cursor, and OTel GenAI Semantic Conventions.
+/// Legacy copilot_chat.* keys are kept because they are dual-emitted with no sunset date.
 /// </summary>
 public static class Sem
 {
     // Resource
     public const string ServiceName = "service.name";
     public const string SessionId = "session.id";
+
+    // Claude Code resource attributes
+    public const string ClaudeCodeSessionId = "claude_code.session_id";
+    public const string GenAiSystem = "gen_ai.system";
 
     // Span-level (gen_ai.*)
     public const string Operation = "gen_ai.operation.name";       // invoke_agent | chat | execute_tool | execute_hook
@@ -56,14 +60,26 @@ public static class Sem
     // canonical github.copilot.* attribute/metric namespace; legacy copilot_chat.*
     // is dual-emitted by VS Code with no sunset date. Normalize() folds the
     // canonical names onto the legacy ones so the aggregation switch stays single.
+    // Claude Code emits claude_code.* for tool-specific attributes, also normalized here.
     public const string TimeToFirstTokenGh = "github.copilot.time_to_first_token";
     public const string TimeToFirstTokenSrv = "gen_ai.server.time_to_first_token";
     public const string TurnCountGh = "github.copilot.turn_count";
 
-    public static string Normalize(string name) =>
-        name.StartsWith("github.copilot.", StringComparison.Ordinal)
-            ? "copilot_chat." + name["github.copilot.".Length..]
-            : name;
+    // Known service.name values used for emitter detection
+    public const string ServiceNameClaudeCode = "claude-code";
+    public const string ServiceNameCursor = "cursor";
+    public const string ServiceNameCopilot = "copilot-chat";
+
+    public static string Normalize(string name)
+    {
+        if (name.StartsWith("github.copilot.", StringComparison.Ordinal))
+            return "copilot_chat." + name["github.copilot.".Length..];
+        if (name.StartsWith("claude_code.", StringComparison.Ordinal))
+            return "copilot_chat." + name["claude_code.".Length..];
+        if (name.StartsWith("cursor.", StringComparison.Ordinal))
+            return "copilot_chat." + name["cursor.".Length..];
+        return name;
+    }
 
     // Events
     public const string ESessionStart = "copilot_chat.session.start";

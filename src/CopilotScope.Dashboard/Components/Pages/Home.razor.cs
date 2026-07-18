@@ -187,12 +187,16 @@ public partial class Home : ComponentBase, IDisposable
              : $"{d.TotalHours:0} h temu";
     }
 
-    private static bool IsCli(SessionSummaryDto s) => s.EmitterKind == EmitterKind.CLI;
+    // CLI-like = no editor signals (edit acceptance, thumbs, LOC) in telemetry
+    private static bool IsCli(SessionSummaryDto s) =>
+        s.EmitterKind is EmitterKind.CLI or EmitterKind.ClaudeCode or EmitterKind.Cursor;
 
     private static string EmitterLabel(EmitterKind k) => k switch
     {
         EmitterKind.VSCode => "VS Code",
-        EmitterKind.CLI => "CLI",
+        EmitterKind.CLI => "Copilot CLI",
+        EmitterKind.ClaudeCode => "Claude Code",
+        EmitterKind.Cursor => "Cursor",
         _ => ""
     };
 

@@ -49,7 +49,7 @@ public enum SessionKind
     Unattributed
 }
 
-public enum EmitterKind { Unknown, VSCode, CLI }
+public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor }
 
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
