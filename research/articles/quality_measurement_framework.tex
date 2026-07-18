@@ -1,0 +1,861 @@
+%% ============================================================
+%%  CopilotScope Quality Measurement Framework
+%%  A multi-signal, telemetry-driven model for assessing
+%%  AI coding-assistant session quality.
+%%
+%%  Compile: pdflatex quality_measurement_framework.tex  (twice)
+%%  Requires: amsmath, amssymb, booktabs, hyperref, xcolor,
+%%            geometry, graphicx, algorithm2e (or algorithmicx)
+%% ============================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!60!black,
+  pdftitle={CopilotScope Quality Measurement Framework},
+  pdfauthor={CopilotScope Project},
+}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\calI}{\mathcal{I}}
+\newcommand{\calW}{\mathcal{W}}
+\newcommand{\clamp}[3]{\operatorname{clamp}\!\left(#1,\,#2,\,#3\right)}
+
+% ---- title block ----
+\title{%
+  \textbf{CopilotScope Quality Measurement Framework}\\[0.4em]
+  \large A Multi-Signal, Telemetry-Driven Model for Assessing\\
+  AI Coding-Assistant Session Quality
+}
+\author{CopilotScope Project}
+\date{July 2026 \quad (draft)}
+
+% ============================================================
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+% ------------------------------------------------------------
+
+AI coding assistants (GitHub Copilot, Claude Code, Cursor) generate significant
+telemetry during development sessions: token counts, acceptance/rejection events,
+time-to-first-token (TTFT) measurements, error traces, and user messages.
+This telemetry is rich but heterogeneous---different signals arrive at different
+times, from different editor surfaces, and at different granularities.
+
+\textbf{CopilotScope} is an OpenTelemetry-based collector and dashboard that
+ingests this telemetry in real time and derives actionable quality scores.
+This paper formally defines the eight algorithms that constitute the quality
+measurement pipeline, examines their mathematical properties, and provides
+numerical examples for each.
+
+The pipeline design follows three principles:
+\begin{enumerate}
+  \item \textbf{Telemetry-only}---no LLM judge, no prompt inspection, no
+        network round-trip at scoring time.
+  \item \textbf{Explainability by construction}---every score decomposes into
+        named, human-readable sub-scores with reasons.
+  \item \textbf{Confidence-aware}---a score without data does not silently
+        collapse to a false neutral; it carries a confidence of~0.
+\end{enumerate}
+
+% ------------------------------------------------------------
+\section{System Architecture Overview}
+\label{sec:architecture}
+% ------------------------------------------------------------
+
+Telemetry flows from the editor (VS~Code, JetBrains, CLI) via OTLP/HTTP or
+OTLP/proto to the \texttt{CopilotScope.Collector} service, which:
+
+\begin{enumerate}
+  \item Decodes payloads using a zero-dependency custom protobuf parser
+        (\S\ref{sec:proto}).
+  \item Routes spans and metrics to the appropriate \texttt{CopilotSession}
+        aggregate.
+  \item Runs the \texttt{InsightPipeline} on every ingest, producing a
+        \texttt{QualityReport} and up to six \texttt{InsightReport}s.
+\end{enumerate}
+
+The quality pipeline consists of the algorithms defined in
+Sections~\ref{sec:quality-engine}--\ref{sec:percentile}.
+
+% ------------------------------------------------------------
+\section{Composite Session Quality Engine}
+\label{sec:quality-engine}
+% ------------------------------------------------------------
+
+\subsection{Component Definitions}
+
+The engine aggregates up to six independent components.  Let
+$\calI \subseteq \{1,\dots,6\}$ denote the set of \emph{informative}
+components---those with at least one observed data point
+($n_i > 0$).
+
+\begin{table}[h!]
+\centering
+\caption{Quality components, base weights, and sub-formulas.}
+\label{tab:components}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Component & Symbol & Base weight $w_i$ & Value $v_i$ \\
+\midrule
+Reliability & $R$    & 0.25 & $(1 - \hat{e})^2$ \\
+Acceptance  & $A$    & 0.20 & $0.6\alpha + 0.4\bar{s}$ \\
+Friction    & $\Phi$ & 0.20 & $\bar{\tau}$ (TFRA mean turn score) \\
+Latency     & $\Lambda$ & 0.15 & $L(p_{50})$ (log-linear curve) \\
+Feedback    & $F$    & 0.10 & $u^+ / (u^+ + u^-)$ \\
+Efficiency  & $E$    & 0.10 & $\overline{\mathrm{eff}}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Reliability.}
+LLM (chat) errors are weighted twice as heavily as tool errors,
+reflecting their greater impact on session flow.
+\[
+  \hat{e} = \frac{2\,e_{\text{LLM}} + e_{\text{tool}}}
+                 {\max(1,\;2\,c_{\text{LLM}} + c_{\text{tool}})},
+  \qquad
+  v_R = \clamp{(1 - \hat{e})^2}{0}{1}.
+\]
+The quadratic penalty means that a~10\% error rate reduces reliability by
+nearly 19\% relative to zero errors, while a~50\% error rate yields
+$v_R = 0.25$---ensuring discrimination at high error rates.
+
+\paragraph{Acceptance.}
+Let $a$ = edits accepted, $j$ = edits rejected,
+$\bar{s}$ = mean survival score (see \S\ref{sec:edit-survival}).
+\[
+  \alpha = \frac{a}{a+j}, \qquad
+  v_A = \clamp{0.6\alpha + 0.4\bar{s}}{0}{1}.
+\]
+
+\paragraph{Friction.}
+$\bar{\tau} = \frac{1}{N}\sum_{i=1}^N \tau_i$, where $\tau_i$ is the
+per-turn TFRA score (see \S\ref{sec:tfra}).
+
+\paragraph{Latency.}
+$v_\Lambda = L(p_{50})$ where $L$ is defined in \S\ref{sec:latency-utility}.
+
+\paragraph{Feedback.}
+$v_F = u^+ / (u^+ + u^-)$, the thumbs-up ratio from explicit user votes.
+
+\paragraph{Efficiency.}
+The efficiency score is the mean of the available sub-signals:
+\[
+  v_E = \frac{1}{|\mathcal{P}|}\sum_{p \in \mathcal{P}} e_p,
+\]
+where $\mathcal{P}$ includes (i)~the cache-hit ratio
+$r_c = C / (I + C)$ and (ii)~the turns-per-invocation score
+\[
+  e_{\mathrm{tpi}} = \begin{cases} 1 & \text{if } \bar{t} \leq 8 \\
+    \clamp{1 - (\bar{t}-8)/17}{0}{1} & \text{otherwise,} \end{cases}
+\]
+with $\bar{t}$ = mean turns per agent invocation.  The turn-per-invocation
+penalty saturates at 25 turns ($e_{\mathrm{tpi}} = 0$).
+
+\subsection{Composite Score with Weight Renormalisation}
+\label{sec:composite}
+
+The key design decision of v2 is to \emph{renormalise} over informative
+components only, eliminating the v1 bug where absent components contributed
+a neutral prior at full weight, compressing the score toward~79--80 for
+any ordinary session.
+
+\begin{definition}[Coverage]
+  $C = \sum_{i \in \calI} w_i \in (0, 1]$.
+\end{definition}
+
+\begin{definition}[Composite quality score]
+\[
+  \boxed{Q = \frac{100}{C} \sum_{i \in \calI} w_i\, v_i}
+\]
+When $\calI = \varnothing$ the system returns the neutral prior $Q = 70$
+at confidence~0.
+\end{definition}
+
+\begin{proposition}
+$Q \in [0, 100]$ for all $v_i \in [0,1]$.
+\end{proposition}
+\begin{proof}
+  $Q = (100/C)\sum_{i \in \calI} w_i v_i \leq (100/C)\sum_{i \in \calI} w_i = 100$.
+  The lower bound follows analogously.
+\end{proof}
+
+\subsection{Confidence}
+
+The \emph{confidence} signal communicates how much data backs the score.
+Each component contributes a \emph{sample ramp}
+$\rho_i = \min(1,\, n_i/5)$ that reaches 1.0 after five samples.
+
+\begin{definition}[Confidence]
+\[
+  \rho = \frac{\sum_{i \in \calI} w_i\,\rho_i}{C},
+  \qquad
+  \boxed{\text{Confidence} = C \cdot \rho \in [0,1].}
+\]
+\end{definition}
+
+A confidence of 1.0 implies both full weight coverage ($C=1$) and at
+least five samples per component.  The interpretation ``score 91 at
+confidence 0.2'' reads as ``early but promising'', not ``certain''.
+
+\subsection{Relative Score}
+
+Given a history window of $H$ recent session scores
+$\{Q_1,\dots,Q_H\}$ with mean $\mu$ and standard deviation $\sigma$:
+\[
+  z = \frac{Q - \mu}{\sigma}, \qquad
+  \text{PercentileRank} = \frac{|\{j : Q_j \leq Q\}|}{H}.
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Grade thresholds and relative labels.}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Score $Q$ & Grade & Relative label (by percentile) \\
+\midrule
+$\geq 85$ & excellent & above baseline ($\geq 0.75$) \\
+$\geq 70$ & good & at baseline ($[0.35, 0.75)$) \\
+$\geq 55$ & fair & below baseline ($< 0.35$) \\
+$\geq 40$ & poor & \\
+$< 40$    & critical & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Numerical Example}
+
+\begin{table}[h!]
+\centering
+\caption{Example composite scores for representative sessions.}
+\label{tab:quality-examples}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Scenario & $Q$ & Confidence & Grade \\
+\midrule
+Perfect (all components, no errors) & 94.2 & 1.00 & excellent \\
+Two LLM errors, reliability only    & 64.0 & 0.25 & good \\
+No data at all                      & 70.0 & 0.00 & good (prior) \\
+High rejection rate, good latency   & 61.5 & 0.52 & fair \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\section{Turn-level Friction \& Repair Analysis (TFRA)}
+\label{sec:tfra}
+% ------------------------------------------------------------
+
+Each agent-invocation trace is a \emph{turn}.  The TFRA model scores every
+turn on $[0,1]$ starting at 1.0 and applying penalty deductions for
+observable friction signals.
+
+\subsection{Per-turn Score}
+
+\begin{definition}[TFRA turn score]
+\[
+  \tau_i = \max\!\left(0,\;
+    1
+    - 0.35 \cdot \min(e^{\text{LLM}}_i, 2)
+    - 0.15 \cdot \min(e^{\text{tool}}_i, 3)
+    - \Delta^{\text{lat}}_i
+    - \Delta^{\text{rep}}_i
+  \right)
+\]
+\end{definition}
+
+\paragraph{Latency penalty $\Delta^{\text{lat}}_i$ (self-referential).}
+Let $m$ = session median TTFT.  A turn is penalised only when its
+latency is anomalous \emph{relative to its own session}---so a
+slow model is not penalised for being slow, only for being inconsistent.
+\[
+  \Delta^{\text{lat}}_i =
+  \begin{cases}
+    0.30 & \text{if } \text{TTFT}_i \geq 3m \\
+    0.15 & \text{if } 1.5m \leq \text{TTFT}_i < 3m \\
+    0    & \text{otherwise.}
+  \end{cases}
+\]
+
+\paragraph{Repair-loop penalty $\Delta^{\text{rep}}_i$.}
+A repair loop is the trace signature of an agent retrying out of a failure:
+unusually many tool calls per chat call \emph{and} tool errors present.
+Let $m_{\text{tr}} = \text{Median}\!\left(c^{\text{tool}}_j / \max(1, c^{\text{LLM}}_j)\right)$.
+\[
+  \Delta^{\text{rep}}_i = 0.10 \cdot \mathbf{1}\!\left[
+    e^{\text{tool}}_i > 0
+    \;\wedge\;
+    \frac{c^{\text{tool}}_i}{\max(1, c^{\text{LLM}}_i)} \geq 2\, m_{\text{tr}}
+    \;\wedge\;
+    c^{\text{tool}}_i \geq 3
+  \right].
+\]
+
+\subsection{Session Median}
+
+\begin{definition}[Median]
+For a sorted list $v_{(1)} \leq \cdots \leq v_{(n)}$:
+\[
+  \text{Median}(V) =
+  \begin{cases}
+    v_{(\lfloor n/2 \rfloor + 1)} & n \text{ odd} \\
+    \dfrac{v_{(n/2)} + v_{(n/2+1)}}{2} & n \text{ even.}
+  \end{cases}
+\]
+\end{definition}
+
+\subsection{Best/Worst Turn Selection}
+
+\[
+  i^* = \arg\max_i \tau_i \quad (\text{ties: } \arg\min_i \text{TTFT}_i),
+  \qquad
+  i_- = \arg\min_i \tau_i \quad (\text{ties: } \arg\max_i \text{TTFT}_i).
+\]
+
+\subsection{Penalty Budget Summary}
+
+\begin{table}[h!]
+\centering
+\caption{Maximum penalties per friction source.}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Source & Max penalty & Capping behaviour \\
+\midrule
+LLM errors & $0.70$ & capped at 2 errors \\
+Tool errors & $0.45$ & capped at 3 errors \\
+Latency outlier & $0.30$ & one penalty only (worst tier wins) \\
+Repair loop & $0.10$ & binary \\
+\midrule
+Total possible & $1.55$ & but $\tau_i = \max(0, \cdot)$ floors at 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\section{Edit Survival Analysis}
+\label{sec:edit-survival}
+% ------------------------------------------------------------
+
+\subsection{Signals}
+
+Two editor-side signals measure how much of generated code survives after
+the observation window closes:
+
+\begin{itemize}
+  \item \textbf{Four-gram overlap} $F \in [0,1]$: fraction of 4-gram character
+        shingles from generated code still present verbatim.
+  \item \textbf{No-revert} $R \in \{0,1\}$: whether the edit was never undone,
+        averaged over edits to yield $\bar{R} \in [0,1]$.
+\end{itemize}
+
+\subsection{Combined Survival Score}
+
+\begin{definition}[Edit survival]
+When both signals are present:
+\[
+  \boxed{S = 0.4\,\bar{F} + 0.6\,\bar{R}.}
+\]
+When only one signal is available, $S = \bar{F}$ or $S = \bar{R}$ respectively.
+\end{definition}
+
+\begin{remark}
+The no-revert weight (0.6) exceeds the four-gram weight (0.4) because code
+can be legitimately \emph{refactored}---low four-gram overlap but no revert---while
+the semantic intent of the AI suggestion survives.  No-revert is the stronger
+durability signal.
+\end{remark}
+
+\begin{table}[h!]
+\centering
+\caption{Interpretation thresholds.}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$S$ & Interpretation \\
+\midrule
+$\geq 0.8$ & Durable --- vast majority survives untouched \\
+$[0.5, 0.8)$ & Partial rework --- suggestions land but get meaningfully edited \\
+$< 0.5$ & Heavy rewrite --- most generated code is replaced or reverted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\section{Acceptance-Weighted Throughput}
+\label{sec:throughput}
+% ------------------------------------------------------------
+
+\subsection{Component Metrics}
+
+Let $a$ = edits accepted, $j$ = edits rejected, $L$ = lines added,
+$T$ = number of turns ($T \geq 1$), $O$ = output tokens.
+
+\[
+  \alpha = \frac{a}{a+j}, \quad
+  \ell_{\text{adj}} = \frac{L \cdot \alpha}{T}, \quad
+  \ell_{\text{tok}} = \frac{L}{O/1000} \quad (\text{optional}).
+\]
+
+\subsection{Throughput Score}
+
+\begin{definition}[Throughput]
+\[
+  \boxed{\text{Score} = \clamp{0.6\alpha + 0.4\min\!\left(1,\;\frac{\ell_{\text{adj}}}{20}\right)}{0}{1}.}
+\]
+\end{definition}
+
+The LOC component saturates at $\ell_{\text{adj}} = 20$ accepted LOC per turn.
+Acceptance ratio dominates (weight 0.6) because high throughput with many
+rejections is churn, not productivity.
+
+\begin{table}[h!]
+\centering
+\caption{Numerical examples for throughput scenarios.}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Scenario & $\alpha$ & $\ell_{\text{adj}}$ & Score & Finding \\
+\midrule
+High acceptance + high LOC & 0.89 & 17.8 & 0.89 & high throughput \\
+Low acceptance rate & 0.40 & 4.0 & 0.32 & miss the mark \\
+Good acceptance, low LOC & 0.83 & 2.5 & 0.55 & moderate \\
+Perfect, moderate LOC & 1.00 & 8.0 & 0.76 & high throughput \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\section{Latency-Utility Model}
+\label{sec:latency-utility}
+% ------------------------------------------------------------
+
+\subsection{Motivation}
+
+A single p50 latency figure does not capture user-perceived impact.  A session
+with ten fast turns and two very slow ones has a low p50 but meaningful
+abandonment risk.  The latency-utility model applies a curve to \emph{every
+sample}, capturing distributional shape.
+
+\subsection{Utility Function}
+
+The curve is log-linear in the interval $[300\,\text{ms}, 10{,}000\,\text{ms}]$,
+reflecting the multiplicative perception of latency (Weber--Fechner law applied
+to time):
+
+\begin{definition}[Latency utility]
+\[
+  U(t) =
+  \begin{cases}
+    1 & t \leq 300\,\text{ms} \\[4pt]
+    0 & t \geq 10{,}000\,\text{ms} \\[4pt]
+    1 - \dfrac{\ln(t/300)}{\ln(10000/300)} & \text{otherwise.}
+  \end{cases}
+\]
+\end{definition}
+
+Key landmark values:
+
+\begin{table}[h!]
+\centering
+\caption{Utility at landmark TTFT values.}
+\begin{tabular}{@{}rl@{}}
+\toprule
+TTFT $t$ & $U(t)$ \\
+\midrule
+$\leq 300\,\text{ms}$ & $1.000$ (perceptual immediacy) \\
+$500\,\text{ms}$ & $0.903$ \\
+$1{,}000\,\text{ms}$ & $0.796$ \\
+$2{,}000\,\text{ms}$ & $0.670$ (attention degradation threshold) \\
+$4{,}000\,\text{ms}$ & $0.512$ \\
+$8{,}000\,\text{ms}$ & $0.329$ (abandonment risk threshold) \\
+$10{,}000\,\text{ms}$ & $0.000$ (flow fully disrupted) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Session-level Metrics}
+
+The model is applied \emph{per sample} $t_i$:
+\[
+  \bar{U} = \frac{1}{N}\sum_{i=1}^{N} U(t_i).
+\]
+Risk fractions:
+\[
+  f_{\text{deg}} = \frac{|\{i : t_i > 2000\}|}{N}, \qquad
+  f_{\text{ab}} = \frac{|\{i : t_i > 8000\}|}{N}.
+\]
+The score returned to the composite pipeline is $\bar{U}$.
+
+% ------------------------------------------------------------
+\section{Token \& Cache Economics}
+\label{sec:token-economics}
+% ------------------------------------------------------------
+
+\subsection{Pricing Model}
+
+Prices are in USD per million tokens (MTok).  For each model $m$, let
+$(p^m_{\text{in}},\, p^m_{\text{out}},\, p^m_{\text{cache}})$ be the
+per-MTok costs for input, output, and cache-read tokens respectively.
+
+Model resolution uses \emph{longest-prefix matching} so that
+\texttt{gpt-4o-mini} is not consumed by the shorter key \texttt{gpt-4o}.
+
+\subsection{Cost Formula}
+
+For each model $m$ with token counts $(I_m, O_m, C_m)$:
+\[
+  \text{Cost}_m = \frac{I_m}{10^6}\,p^m_{\text{in}}
+                + \frac{O_m}{10^6}\,p^m_{\text{out}}
+                + \frac{C_m}{10^6}\,p^m_{\text{cache}},
+  \qquad
+  \text{Total} = \sum_m \text{Cost}_m.
+\]
+
+\subsection{Cache Savings}
+
+Each cache-read token avoids paying the full input price:
+\[
+  \text{Savings}_m = \frac{C_m}{10^6}\,\max\!\left(0,\;p^m_{\text{in}} - p^m_{\text{cache}}\right).
+\]
+
+\subsection{Cache Hit Ratio (score)}
+
+\begin{definition}[Cache hit ratio]
+\[
+  r_c = \frac{\sum_m C_m}{\sum_m (I_m + C_m)}.
+\]
+\end{definition}
+
+A ratio $r_c \geq 0.5$ indicates that the prompt cache is doing heavy lifting;
+$r_c < 0.1$ with large context ($> 50{,}000$ prompt tokens) flags fresh-context
+waste.  The score fed to the efficiency component is $r_c$.
+
+% ------------------------------------------------------------
+\section{Lexical Frustration Classifier}
+\label{sec:frustration}
+% ------------------------------------------------------------
+
+\subsection{Design Philosophy}
+
+This is a \textbf{report-only} signal, deliberately excluded from the composite
+quality score.  Lexicon heuristics produce false positives (``no worries'',
+sarcasm, language bias) and false negatives (terse professional frustration).
+Every flagged message carries its reasons so that a human can judge.  Inclusion
+in the composite should follow validation against real sessions.
+
+\subsection{Per-message Score}
+
+Five signals are combined per user message $x_i$:
+
+\begin{definition}[Message frustration score]
+\[
+  f_i = \min\!\left(1,\;
+    0.45\,\min(h^s_i,2)
+    + 0.15\,\min(h^m_i,3)
+    + 0.30\,\mathbf{1}\!\left[J(x_i, x_{i-1}) \geq 0.6\right]
+    + 0.15\,\mathbf{1}\!\left[\text{CAPS}(x_i)\right]
+    + 0.10\,\mathbf{1}\!\left[\text{punct}(x_i)\right]
+    + 0.20\,\mathbf{1}\!\left[\text{corr}(x_i)\right]
+  \right)
+\]
+\end{definition}
+
+where $h^s_i$ and $h^m_i$ are counts of strong and mild lexicon markers (bilingual
+EN/PL), and the indicator predicates are:
+\begin{itemize}
+  \item $J(a,b) \geq 0.6$: Jaccard word-set similarity with previous message $\geq 0.6$
+        (rephrasing / repair signal);
+  \item $\text{CAPS}(x)$: $>60\%$ uppercase letters over $\geq 12$ letter characters;
+  \item $\text{punct}(x)$: presence of \texttt{!!}, \texttt{??}, or \texttt{?!};
+  \item $\text{corr}(x)$: $|x| < 20$ characters \emph{and} starts with
+        ``no'', ``nie'', ``stop'', ``wrong'', or ``\'{z}le''.
+\end{itemize}
+
+\subsection{Jaccard Word-set Similarity}
+
+Tokenize by splitting on whitespace and punctuation, keeping tokens of length $> 2$:
+
+\begin{definition}[Jaccard similarity]
+\[
+  J(a, b) = \frac{|\calW_a \cap \calW_b|}{|\calW_a \cup \calW_b|}
+           = \frac{|\calW_a \cap \calW_b|}{|\calW_a| + |\calW_b| - |\calW_a \cap \calW_b|}.
+\]
+\end{definition}
+
+\subsection{Session Frustration Index}
+
+The mean of per-message scores averages away isolated angry messages.
+The index is pulled \emph{halfway toward the peak}:
+
+\begin{definition}[Session frustration index]
+\[
+  \boxed{F = \bar{f} + 0.5\,\left(\max_i f_i - \bar{f}\right).}
+\]
+\end{definition}
+
+\begin{table}[h!]
+\centering
+\caption{Frustration index interpretation.}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$F$ & Interpretation \\
+\midrule
+$\geq 0.5$ & Clear frustration signals --- review flagged messages \\
+$\in [0.25, 0.5)$ & Mild friction in conversation tone \\
+$< 0.25$ & No meaningful frustration signals \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+\section{Order-Statistic Percentile}
+\label{sec:percentile}
+% ------------------------------------------------------------
+
+All percentile computations in the pipeline use the \emph{nearest-rank}
+(ceil) method.
+
+\begin{definition}[Nearest-rank percentile]
+Given a sorted list $v_{(1)} \leq \cdots \leq v_{(n)}$ and quantile
+$p \in (0, 1]$:
+\[
+  \text{Percentile}(V, p) = v_{\!\left(\,\clamp{\lceil p\,n \rceil - 1}{0}{n-1}\right)}.
+\]
+\end{definition}
+
+\begin{remark}
+The nearest-rank method always returns an \emph{observed} value, not a
+hypothetical interpolated one.  This is desirable for latency reporting
+(a real TTFT measurement, not a weighted average of two measurements).
+For small $n$ ($\leq 10$), divergence from linear interpolation can be
+several hundred milliseconds at p95; the nearest-rank value is less
+sensitive to outliers in that regime.
+\end{remark}
+
+\paragraph{Edge cases.}
+Empty list returns~0.  A single-element list returns that element for all~$p$.
+
+% ------------------------------------------------------------
+\section{Custom Protobuf Decoder}
+\label{sec:proto}
+% ------------------------------------------------------------
+
+The collector ingests OTLP/proto payloads without the official
+\texttt{Google.Protobuf} NuGet package, using a hand-written wire-format
+parser.  This section documents the decoding rules for completeness.
+
+\subsection{Wire Types}
+
+The protobuf binary encoding maps each field to one of six wire types:
+
+\begin{table}[h!]
+\centering
+\caption{Protobuf wire types used in OTLP payloads.}
+\begin{tabular}{@{}rll@{}}
+\toprule
+Wire type & Name & Used for \\
+\midrule
+0 & Varint & field numbers, booleans, enum values \\
+1 & 64-bit & \texttt{fixed64}, \texttt{sfixed64}, \texttt{double} \\
+2 & Length-delimited & strings, bytes, embedded messages \\
+5 & 32-bit & \texttt{fixed32}, \texttt{sfixed32}, \texttt{float} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Varint Decoding}
+
+A varint encodes a 64-bit integer as a sequence of bytes; the MSB of
+each byte signals continuation:
+\[
+  v = \sum_{k=0}^{K-1} (b_k \;\&\; 0x7F) \ll 7k,
+  \quad \text{where } b_K \;\&\; 0x80 = 0.
+\]
+
+\subsection{Tag Decoding}
+
+Each field tag encodes the field number and wire type:
+\[
+  \text{tag} = (\text{field\_number} \ll 3) \;|\; \text{wire\_type}.
+\]
+
+The \texttt{OtlpDecoder} traverses resource spans, scope spans, and
+individual \texttt{Span} records, extracting attributes by name
+(e.g.\ \texttt{gen\_ai.usage.input\_tokens}) and routing them to the
+appropriate session aggregate.
+
+% ------------------------------------------------------------
+\section{Pipeline Integration}
+\label{sec:pipeline}
+% ------------------------------------------------------------
+
+\subsection{InsightPipeline}
+
+All analyzers implement \texttt{IInsightAnalyzer} and are composed in
+\texttt{InsightPipeline}, which calls them sequentially and isolates
+faults---a crash in one analyzer does not abort the others.  Results are
+returned as \texttt{InsightReport} records:
+\[
+  \texttt{InsightReport} = (\text{title},\, \text{algorithm},\, \text{status},\,
+    \text{score} \in [0,1] \cup \{\text{null}\},\, \text{metrics},\, \text{findings}).
+\]
+
+\subsection{Session Kind Classification}
+
+Before quality scoring, sessions are classified by scanning prompt prefixes:
+
+\begin{table}[h!]
+\centering
+\caption{Session kind classification rules.}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Kind & Detection rule \\
+\midrule
+\texttt{UserChat} & No internal prefix detected \\
+\texttt{InternalTitleGeneration} & Prompt starts with title-generation prefix \\
+\texttt{InternalSummary} & Prompt starts with summary prefix \\
+\texttt{InternalHelper} & Prompt starts with helper prefix \\
+\texttt{Unattributed} & No transcript available \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Internal sessions (title generation, summarisation) are excluded from
+quality aggregation to avoid inflating scores with trivially perfect
+short sessions.
+
+% ------------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
+% ------------------------------------------------------------
+
+\subsection{Design Choices and Trade-offs}
+
+\paragraph{Weight renormalisation (v2).}
+The v1 composite engine contributed a fixed neutral prior~0.7 at full weight
+for absent components, compressing all ordinary sessions toward 79--80 and
+destroying discrimination.  The v2 renormalisation scheme allows the score to
+reflect only what is actually observed.  The cost is that a session with only
+reliability data has a score of $v_R \times 100$, which can be misleadingly
+high or low---hence the confidence signal is essential.
+
+\paragraph{Self-referential latency in TFRA.}
+Using session-median TTFT as the reference for latency penalties means that a
+slow model is not punished for being slow---only for \emph{inconsistency}
+within its own distribution.  This is intentional: a developer who chooses
+Claude Opus accepts higher latency; the friction signal should flag unexpected
+spikes, not the baseline.
+
+\paragraph{Frustration as report-only.}
+Lexicon heuristics are noisy.  Promoting the frustration index into the
+composite score before validating it against real labelled sessions would
+introduce a signal with unknown false-positive rate into a number that drives
+dashboard decisions.  The report-only design follows the principle of doing no
+harm until a signal is validated.
+
+\subsection{Upgrade Paths}
+
+\begin{itemize}
+  \item \textbf{Frustration}: replace the lexicon heuristic with a SPUR-style
+        learned rubric or a lightweight local model trained on session transcripts.
+  \item \textbf{Throughput}: add a semantic similarity component using
+        diff-level embeddings to detect intent-preserving refactors.
+  \item \textbf{Latency}: incorporate model-specific SLA targets so that
+        latency utility curves are calibrated per model rather than universal.
+  \item \textbf{Composite}: learn component weights from labelled ``good session''
+        datasets rather than using hand-tuned values.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+% ------------------------------------------------------------
+
+This paper has formally defined the eight algorithms that constitute the
+CopilotScope quality measurement pipeline.  Together they provide a
+\emph{multi-dimensional, telemetry-only, confidence-aware} view of AI
+coding-assistant session quality---without requiring prompt inspection,
+LLM judges, or external API calls at scoring time.
+
+The framework is implemented in C\# (.NET~8) and is open for extension:
+new analyzers implement \texttt{IInsightAnalyzer} and register with the
+pipeline in a single line of code.  The Python research notebooks in the
+companion \texttt{research/} directory reproduce every formula and numerical
+example in this paper and provide visualisations suitable for further
+investigation.
+
+% ------------------------------------------------------------
+\appendix
+% ------------------------------------------------------------
+
+\section{Symbol Table}
+\label{app:symbols}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Symbol & Meaning \\
+\midrule
+$Q$ & Composite quality score $\in [0, 100]$ \\
+$C$ & Weight coverage of informative components \\
+$\calI$ & Set of informative component indices \\
+$w_i$ & Base weight of component $i$ \\
+$v_i$ & Value of component $i \in [0,1]$ \\
+$n_i$ & Sample count of component $i$ \\
+$\rho_i$ & Sample ramp of component $i = \min(1, n_i/5)$ \\
+$\hat{e}$ & Weighted error rate (reliability) \\
+$\alpha$ & Edit acceptance ratio \\
+$\bar{s}$ & Mean survival score \\
+$\bar{\tau}$ & Mean TFRA turn score (friction) \\
+$\tau_i$ & TFRA score for turn $i$ \\
+$m$ & Session median TTFT \\
+$U(t)$ & Latency utility at TTFT $t$ \\
+$\bar{U}$ & Mean per-sample latency utility \\
+$f_{\text{deg}}$ & Fraction of responses $> 2\,\text{s}$ \\
+$f_{\text{ab}}$ & Fraction of responses $> 8\,\text{s}$ \\
+$r_c$ & Prompt-cache hit ratio \\
+$f_i$ & Per-message frustration score \\
+$F$ & Session frustration index \\
+$J(a,b)$ & Jaccard word-set similarity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Base Weights Sensitivity}
+\label{app:sensitivity}
+
+The base weights $(0.25, 0.20, 0.20, 0.15, 0.10, 0.10)$ sum to $1.0$.
+The table below shows how the composite score changes under uniform
+$\pm 0.05$ perturbation to the reliability weight, holding all others fixed
+and renormalising, for the ``perfect session'' scenario ($v_i = 1$ for all $i$).
+Since all values are~1, the score is always~100 regardless of weight choice
+(the formula reduces to $100 \cdot C / C = 100$).  The sensitivity only
+manifests when components have differing values---which is the practical case.
+
+\end{document}
