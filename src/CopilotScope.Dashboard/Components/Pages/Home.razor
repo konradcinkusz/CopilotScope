@@ -166,8 +166,8 @@
                 }
                 else
                 {
-                    @{ var allClean = _detail.Turns.Turns.All(t => t.Score >= 1.0); }
-                    @{ var hasIssues = _detail.Turns.Turns.Where(t => t.Score < 1.0).ToList(); }
+                    var allClean = _detail.Turns.Turns.All(t => t.Score >= 1.0);
+                    var hasIssues = _detail.Turns.Turns.Where(t => t.Score < 1.0).ToList();
 
                     <div class="findings">
                         @foreach (var f in _detail.Turns.Findings)
@@ -176,12 +176,10 @@
                         }
                     </div>
 
-                    @{
-                        var turnsWithModel = _detail.Turns.Turns.Where(t => t.Model is not null).ToList();
-                        var hasModelData = turnsWithModel.Count > 0;
-                        var distinctModels = _detail.Turns.Turns.Select(t => t.Model).Distinct().Where(m => m != null).ToList();
-                        var modelSwitchOccurred = distinctModels.Count > 1;
-                    }
+                    var turnsWithModel = _detail.Turns.Turns.Where(t => t.Model is not null).ToList();
+                    var hasModelData = turnsWithModel.Count > 0;
+                    var distinctModels = _detail.Turns.Turns.Select(t => t.Model).Distinct().Where(m => m != null).ToList();
+                    var modelSwitchOccurred = distinctModels.Count > 1;
                     @if (hasModelData)
                     {
                         <div class="model-timeline" title="Model used per turn — each block is one turn">
@@ -195,7 +193,7 @@
                                          title="Turn @(t.Index + 1): @(t.Model ?? "(no model)")">
                                         <span class="model-seg-label">@ModelShortLabel(t.Model)</span>
                                     </div>
-                                    @{ prevModel = t.Model ?? prevModel; }
+                                    prevModel = t.Model ?? prevModel;
                                 }
                             </div>
                             @if (modelSwitchOccurred)
@@ -240,7 +238,7 @@
                             </div>
                         }
 
-                        @{ var cleanCount = _detail.Turns.Turns.Count - hasIssues.Count; }
+                        var cleanCount = _detail.Turns.Turns.Count - hasIssues.Count;
                         @if (cleanCount > 0)
                         {
                             <div class="turns-clean-banner">
