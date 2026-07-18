@@ -13,6 +13,7 @@
 
 <div class="doc">
     <nav class="doc-toc">
+        <a href="/docs#sources">Supported sources</a>
         <a href="/docs#model">Data model</a>
         <a href="/docs#quality">Session quality</a>
         <a href="/docs#turns">Turn analysis</a>
@@ -24,6 +25,77 @@
         <a href="/docs#overview">Overview page</a>
         <a href="/docs#limits">Limitations</a>
     </nav>
+
+    <section id="sources" class="panel doc-section">
+        <h2>Supported sources</h2>
+        <p>
+            CopilotScope ingests <b>OTLP/HTTP</b> (protobuf or JSON) on port 4318. Any client
+            that can emit standard OpenTelemetry GenAI signals to that endpoint is supported.
+            Tool-specific attribute namespaces (<code>github.copilot.*</code>, <code>claude_code.*</code>,
+            <code>cursor.*</code>) are normalized to the internal <code>copilot_chat.*</code> schema at
+            ingest time, so all sources share the same aggregation, quality scoring, and dashboard.
+        </p>
+        <table class="doc-table">
+            <thead><tr><th>Source</th><th>Label</th><th>How to enable</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td>GitHub Copilot — VS Code</td>
+                    <td><code>VS Code</code></td>
+                    <td>
+                        Add to VS Code settings.json:<br/>
+                        <code>"github.copilot.chat.otel.enabled": true</code><br/>
+                        <code>"github.copilot.chat.otel.otlpEndpoint": "http://localhost:4318"</code>
+                    </td>
+                    <td>Full signal set — spans, metrics, logs. Edit acceptance, feedback, LOC all available.</td>
+                </tr>
+                <tr>
+                    <td>GitHub Copilot — CLI</td>
+                    <td><code>Copilot CLI</code></td>
+                    <td>
+                        Run <code>scripts/Enable-CopilotOtel.ps1</code> (PowerShell) then launch <code>copilot</code> from the same terminal.
+                    </td>
+                    <td>Span + metric signals. No edit acceptance or feedback (CLI has no editor UI).</td>
+                </tr>
+                <tr>
+                    <td>Claude Code</td>
+                    <td><code>Claude Code</code></td>
+                    <td>
+                        <b>Linux/macOS:</b> <code>source scripts/Enable-ClaudeCodeOtel.sh</code><br/>
+                        <b>Windows:</b> <code>.\scripts\Enable-ClaudeCodeOtel.ps1</code><br/>
+                        Then launch <code>claude</code> from the same terminal.<br/>
+                        Or set env vars directly:<br/>
+                        <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code><br/>
+                        <code>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf</code>
+                    </td>
+                    <td>
+                        Detected via <code>service.name=claude-code</code> or <code>gen_ai.system=anthropic</code>.
+                        <code>claude_code.*</code> attributes are normalized. Anthropic model pricing is pre-configured.
+                        Content capture: <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code>.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Cursor</td>
+                    <td><code>Cursor</code></td>
+                    <td>
+                        Cursor is a VS Code fork — try adding the same VS Code settings in Cursor's settings.json.
+                        Alternatively, set <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code> if
+                        Cursor exposes an OTLP env-var hook.
+                    </td>
+                    <td>
+                        Detected via <code>service.name</code> containing <code>cursor</code>.
+                        <code>cursor.*</code> attributes are normalized. Edit acceptance signals depend on
+                        whether Cursor emits them — check your session tiles.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <p>
+            <b>Adding a new source:</b> any tool that emits OTLP/HTTP to port 4318 with standard
+            <code>gen_ai.*</code> attributes (operation name, conversation id, token counts) will be
+            collected automatically. Tool-specific namespaces can be normalized by extending
+            <code>Sem.Normalize()</code> in <code>CopilotScope.Collector/Domain/Sem.cs</code>.
+        </p>
+    </section>
 
     <section id="model" class="panel doc-section">
         <h2>What CopilotScope measures — the data model</h2>

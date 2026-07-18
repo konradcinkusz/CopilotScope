@@ -329,6 +329,7 @@ public sealed class SessionStore
     private static string? ResourceFingerprint(Dictionary<string, AttrValue> resource)
     {
         if (resource.TryGetValue(Sem.SessionId, out var sid)) return $"vscode:{sid}";
+        if (resource.TryGetValue(Sem.ClaudeCodeSessionId, out var ccSid)) return $"claude:{ccSid}";
         if (resource.TryGetValue("service.instance.id", out var inst)) return $"inst:{inst}";
         var svc = resource.TryGetValue(Sem.ServiceName, out var name) ? name.ToString() : null;
         if (resource.TryGetValue("process.pid", out var pid) && svc is not null) return $"proc:{svc}:{pid}";
@@ -338,6 +339,17 @@ public sealed class SessionStore
     private static EmitterKind DetectEmitter(Dictionary<string, AttrValue> resource)
     {
         if (resource.ContainsKey(Sem.SessionId)) return EmitterKind.VSCode;
+        if (resource.TryGetValue(Sem.ServiceName, out var svc))
+        {
+            var svcName = svc.ToString();
+            if (svcName.Contains(Sem.ServiceNameClaudeCode, StringComparison.OrdinalIgnoreCase))
+                return EmitterKind.ClaudeCode;
+            if (svcName.Contains(Sem.ServiceNameCursor, StringComparison.OrdinalIgnoreCase))
+                return EmitterKind.Cursor;
+        }
+        if (resource.TryGetValue(Sem.GenAiSystem, out var genAiSys) &&
+            genAiSys.ToString().Contains("anthropic", StringComparison.OrdinalIgnoreCase))
+            return EmitterKind.ClaudeCode;
         if (resource.ContainsKey("process.pid")) return EmitterKind.CLI;
         return EmitterKind.Unknown;
     }
