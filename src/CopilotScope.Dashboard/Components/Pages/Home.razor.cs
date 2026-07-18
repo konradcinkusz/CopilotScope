@@ -261,8 +261,9 @@ public partial class Home : ComponentBase, IDisposable
         _ => $"grade-{q.Grade}"
     };
 
-    /// <summary>Subtitle line for quality score — shows percentile context when history is available.</summary>
-    private static string QualitySubtitle(QualityReportDto q)
+    /// <summary>Subtitle line for quality score — shows percentile context when history is available.
+    /// When <paramref name="repo"/> is non-null the peer pool is repo-scoped, so the label says "repo sessions".</summary>
+    private static string QualitySubtitle(QualityReportDto q, string? repo = null)
     {
         if (q.PercentileRank is not { } pct || q.HistoryCount is not { } n || n < 3)
             return $"/ 100 · {q.Grade} · confidence {(q.Confidence * 100):0}%";
@@ -270,7 +271,8 @@ public partial class Home : ComponentBase, IDisposable
         var pctLabel = $"{(int)(pct * 100)}th percentile";
         var zLabel = q.ZScore is { } z ? $" ({(z >= 0 ? "+" : "")}{z:0.0}σ)" : "";
         var meanLabel = q.HistoryMean?.ToString("0.0") ?? "?";
-        return $"/ 100 · {pctLabel}{zLabel} vs last {n} sessions (mean {meanLabel})";
+        var context = repo is not null ? $"{n} repo sessions" : $"last {n} sessions";
+        return $"/ 100 · {pctLabel}{zLabel} vs {context} (mean {meanLabel})";
     }
 
     public void Dispose()
