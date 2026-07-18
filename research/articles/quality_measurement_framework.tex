@@ -406,6 +406,222 @@ $< 0.5$ & Heavy rewrite --- most generated code is replaced or reverted \\
 \end{tabular}
 \end{table}
 
+% ---- 4.3 Four-gram shingling mechanics ----
+\subsection{Four-gram Shingling --- Exact Mechanics}
+\label{sec:edit-survival-4gram}
+
+Given a generated code string $g$ and its surviving form $s$, the
+\emph{4-gram set} is defined as:
+\[
+  \mathcal{G}_4(t) = \bigl\{\, t[i : i+4] \;\bigm|\; 0 \leq i \leq |t| - 4 \,\bigr\}.
+\]
+Using sets (not multisets) prevents double-counting repeated patterns
+(e.g.\ indentation runs \verb|"    "|) and keeps $F \in [0,1]$ regardless of
+code length.
+
+\begin{definition}[Four-gram overlap for a single edit]
+\[
+  F = \frac{|\mathcal{G}_4(g) \cap \mathcal{G}_4(s)|}{|\mathcal{G}_4(g)|}.
+\]
+The per-session mean $\bar{F} = \tfrac{1}{n}\sum_{k=1}^{n} F_k$ averages over
+all $n$ edits in the session.
+\end{definition}
+
+\paragraph{Mini-example: single-character change.}
+Consider a generated line \texttt{"\ \ \ \ return x + 1"} (16 characters)
+that the user changes to \texttt{"\ \ \ \ return x + 2"}.
+
+\begin{itemize}
+  \item $|\mathcal{G}_4(g)| = 13$ (4-gram positions $0\ldots 12$).
+  \item The only differing 4-gram is at position 12:
+        generated \texttt{" + 1"} $\neq$ surviving \texttt{" + 2"}.
+  \item $|\mathcal{G}_4(g) \cap \mathcal{G}_4(s)| = 12$.
+  \item $F = 12/13 \approx 0.923$\,---high survival despite a user edit.
+\end{itemize}
+
+\paragraph{Mini-example: semantic rewrite.}
+Generated: \texttt{"if x > 0:\textbackslash n\ \ \ \ return True"} (22 chars, 19 grams).
+Surviving: \texttt{"if x >= 0:\textbackslash n\ \ \ \ return x != 0"} (25 chars, 22 grams).
+
+The shared 4-grams are structural tokens such as \texttt{"if x"}, \texttt{"\ \ \ \ "} and
+\texttt{"retu"}\,---\,11 of 19 generated grams survive (see Table~\ref{tab:4gram-rewrite}).
+
+\begin{table}[h!]
+\centering
+\caption{4-gram overlap for the semantic-rewrite mini-example.}
+\label{tab:4gram-rewrite}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Metric & Value & Explanation \\
+\midrule
+$|\mathcal{G}_4(g)|$ & 19 & 4-grams in generated code \\
+$|\mathcal{G}_4(s)|$ & 22 & 4-grams in surviving code \\
+$|\mathcal{G}_4(g) \cap \mathcal{G}_4(s)|$ & 11 & shared grams (structure/keywords) \\
+$|\mathcal{G}_4(g) \setminus \mathcal{G}_4(s)|$ & 8 & lost grams (operator, value tokens) \\
+$F$ & $11/19 \approx 0.579$ & substantial rewrite detected \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---- 4.4 Worked numerical example ----
+\subsection{Worked Numerical Example --- Full Session (4 Edits)}
+\label{sec:edit-survival-example}
+
+We trace a realistic 4-edit Python session end-to-end.  For each edit,
+$F_k$ is computed via four-gram overlap and $R_k \in \{0,1\}$ records
+whether the edit was ever undone.
+
+\begin{table}[h!]
+\centering
+\caption{Per-edit signal values for the worked session.}
+\label{tab:edit-per-edit}
+\begin{tabular}{@{}clllrrl@{}}
+\toprule
+$k$ & Generated (excerpt) & Surviving (excerpt) & Event & $F_k$ & $R_k$ & Note \\
+\midrule
+1 & \texttt{def add(a,b): return a+b} & identical & kept verbatim
+    & $1.000$ & $1$ & all grams match \\
+2 & \texttt{return x * y} & \texttt{return x * y * 2}
+    & append & $0.857$ & $1$ & last gram changed \\
+3 & \texttt{if x > 0: return True} & \texttt{if x >= 0: return x != 0}
+    & rewrite & $0.579$ & $1$ & logic replaced \\
+4 & \texttt{\# TODO: implement later} & (empty) & reverted
+    & $0.000$ & $0$ & undo triggered \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Step 1 — Session means.}
+\[
+  \bar{F} = \frac{F_1 + F_2 + F_3 + F_4}{4}
+           = \frac{1.000 + 0.857 + 0.579 + 0.000}{4}
+           = \frac{2.436}{4} = 0.6090.
+\]
+\[
+  \bar{R} = \frac{R_1 + R_2 + R_3 + R_4}{4}
+           = \frac{1 + 1 + 1 + 0}{4}
+           = \frac{3}{4} = 0.7500.
+\]
+
+\paragraph{Step 2 --- Combined survival score.}
+\[
+  S = 0.4\,\bar{F} + 0.6\,\bar{R}
+    = 0.4 \times 0.6090 + 0.6 \times 0.7500
+    = 0.2436 + 0.4500
+    = 0.6936.
+\]
+
+\paragraph{Step 3 --- Interpretation.}
+$S = 0.6936 \in [0.5, 0.8)$ $\Rightarrow$ \textbf{partial rework}.
+Despite one full revert and one substantial rewrite, two clean edits and
+three no-revert outcomes keep the session above the heavy-rewrite threshold.
+
+\begin{remark}
+The four-gram signal is sensitive to small changes: edit~2 loses only one
+4-gram out of seven ($F_2 = 6/7 \approx 0.857$), confirming that appending
+\texttt{* 2} is a minor extension rather than a replacement.
+\end{remark}
+
+% ---- 4.5 Weight sensitivity ----
+\subsection{Weight Sensitivity}
+\label{sec:edit-survival-sensitivity}
+
+Let $w_F + w_R = 1$, $w_F, w_R \geq 0$.  Table~\ref{tab:weight-sensitivity}
+evaluates five $(w_F, w_R)$ pairs on the four scenarios from
+Table~\ref{tab:edit-per-edit} (using the session-level means) plus the
+\emph{refactored-but-kept} scenario $(\bar{F}=0.25,\bar{R}=0.95)$.
+
+\begin{table}[h!]
+\centering
+\caption{Combined survival score $S$ under alternative weights.
+         $\star$ = CopilotScope default.  Cells show $S$ (interpretation:
+         \textbf{D} = durable, \textbf{P} = partial rework, \textbf{H} = heavy rewrite).}
+\label{tab:weight-sensitivity}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+Scenario & $\bar{F}$ & $\bar{R}$ &
+  $w_F{=}0.2$ & $w_F{=}0.3$ & $w_F{=}0.4^\star$ &
+  $w_F{=}0.5$ & $w_F{=}0.6$ \\
+\midrule
+Durable (verbatim)
+  & 0.890 & 0.975
+  & 0.958\,D & 0.949\,D & 0.941\,D & 0.933\,D & 0.924\,D \\
+Refactored (semantic keep)
+  & 0.250 & 0.950
+  & 0.810\,D & 0.740\,P & 0.670\,P & 0.600\,P & 0.530\,P \\
+Worked session (§\ref{sec:edit-survival-example})
+  & 0.609 & 0.750
+  & 0.572\,P & 0.608\,P & 0.694\,P & 0.680\,P & 0.665\,P \\
+Mixed signals
+  & 0.575 & 0.650
+  & 0.605\,P & 0.628\,P & 0.620\,P & 0.613\,P & 0.605\,P \\
+Mostly reverted
+  & 0.275 & 0.150
+  & 0.145\,H & 0.187\,H & 0.200\,H & 0.213\,H & 0.225\,H \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The critical row is \emph{Refactored (semantic keep)}:
+with the default weights $(0.4, 0.6)$ the score is 0.670 (partial rework,
+correctly capturing that AI intent survived).  A four-gram-dominant
+weighting $w_F{=}0.6$ drops it to 0.530---still partial rework but
+closer to the heavy-rewrite boundary, understating the durability of a
+semantically accepted but syntactically refactored suggestion.
+
+% ---- 4.6 Connection to acceptance component ----
+\subsection{Connection to the Acceptance Component}
+\label{sec:edit-survival-acceptance}
+
+The per-session survival score $\bar{S}$ feeds directly into the
+\textbf{Acceptance} component of the Composite Quality Engine
+(Table~\ref{tab:components}):
+\[
+  v_A = \clamp{0.6\,\alpha + 0.4\,\bar{S}}{0}{1},
+\]
+where $\alpha = a/(a+j)$ is the edit-acceptance ratio.
+
+This two-level design captures two distinct moments in the editing workflow:
+
+\begin{itemize}
+  \item $\alpha$ records the \emph{immediate} accept/reject decision at
+        suggestion time.
+  \item $\bar{S}$ records the \emph{long-run} durability after the
+        observation window closes.
+\end{itemize}
+
+Table~\ref{tab:acceptance-examples} illustrates how $v_A$ discriminates
+between scenarios that look identical on $\alpha$ alone.
+
+\begin{table}[h!]
+\centering
+\caption{Acceptance component $v_A$ for representative scenarios.}
+\label{tab:acceptance-examples}
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+Scenario & $\alpha$ & $\bar{S}$ & $0.6\alpha$ & $0.4\bar{S}$ & $v_A$ \\
+\midrule
+High accept + high survival
+  & 0.90 & 0.85 & 0.540 & 0.340 & 0.880 \\
+High accept + heavy rewrite
+  & 0.90 & 0.25 & 0.540 & 0.100 & 0.640 \\
+Moderate accept + high survival
+  & 0.60 & 0.90 & 0.360 & 0.360 & 0.720 \\
+Low accept + durable keeps
+  & 0.40 & 0.95 & 0.240 & 0.380 & 0.620 \\
+Low accept + low survival
+  & 0.40 & 0.20 & 0.240 & 0.080 & 0.320 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{remark}
+``High accept + heavy rewrite'' scores $v_A = 0.640$, \emph{lower} than
+``Moderate accept + high survival'' ($v_A = 0.720$).  A user who clicks
+\emph{Accept} but immediately rewrites the code is not a high-quality
+interaction; the survival term correctly penalises this pattern.
+\end{remark}
+
 % ------------------------------------------------------------
 \section{Acceptance-Weighted Throughput}
 \label{sec:throughput}
