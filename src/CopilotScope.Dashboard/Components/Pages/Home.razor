@@ -323,10 +323,8 @@
 
             @if (_viewMode != ViewMode.Basic)
             {
-                @{
-                    var visInsights = _detail.Insights.Where(ShowInsight).ToList();
-                }
-                @if (visInsights.Count > 0)
+                var visInsights = _detail.Insights.Where(ShowInsight).ToList();
+                if (visInsights.Count > 0)
                 {
                     <div class="panel">
                         <div class="panel-label">Insights — algorithm reports</div>
