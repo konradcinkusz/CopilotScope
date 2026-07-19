@@ -250,6 +250,150 @@ $< 40$    & critical & \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:quality-engine-example}
+
+We score one realistic session end-to-end.  Five of the six components are
+informative; the user cast no explicit thumbs votes, so Feedback has
+$n_F = 0$ and drops out of $\calI$.  The measured inputs are:
+$e_{\text{LLM}} = 1$ error over $c_{\text{LLM}} = 12$ chat calls and
+$e_{\text{tool}} = 2$ errors over $c_{\text{tool}} = 30$ tool calls;
+$a = 14$ accepted and $j = 6$ rejected edits with mean survival
+$\bar{s} = 0.6936$; mean TFRA turn score $\bar{\tau} = 0.87$ over
+$N = 10$ turns; median TTFT $p_{50} = 1{,}950\,\text{ms}$ over 6 latency
+samples; and efficiency sub-signals $r_c = 0.7714$ with
+$\bar{t} = 5$ turns per invocation over 2 agent invocations.
+
+\paragraph{Step 1 --- Reliability $v_R$.}
+We form the weighted error rate, with chat errors counted twice, then
+apply the quadratic penalty.
+\[
+  \hat{e} = \frac{2 \times 1 + 2}{\max(1,\; 2 \times 12 + 30)}
+          = \frac{4}{54}
+          = 0.0741,
+\]
+\[
+  v_R = \clamp{(1 - 0.0741)^2}{0}{1}
+      = 0.9259^2
+      = 0.8573.
+\]
+
+\paragraph{Step 2 --- Acceptance $v_A$.}
+The acceptance ratio is blended with the survival mean, 60/40.
+\[
+  \alpha = \frac{14}{14+6} = 0.70,
+  \qquad
+  v_A = \clamp{0.6 \times 0.70 + 0.4 \times 0.6936}{0}{1}
+      = 0.4200 + 0.2774
+      = 0.6974.
+\]
+
+\paragraph{Step 3 --- Friction $v_\Phi$ and Latency $v_\Lambda$.}
+Friction passes the TFRA mean through unchanged; latency pushes the median
+TTFT through the log-linear curve of \S\ref{sec:latency-utility}.
+\[
+  v_\Phi = \bar{\tau} = 0.8700,
+\]
+\[
+  v_\Lambda = L(1950)
+            = 1 - \frac{\ln(1950/300)}{\ln(10000/300)}
+            = 1 - \frac{1.8718}{3.5066}
+            = 1 - 0.5338
+            = 0.4662.
+\]
+
+\paragraph{Step 4 --- Efficiency $v_E$.}
+Both sub-signals are available: the cache ratio, and the
+turns-per-invocation score, which is 1 because $\bar{t} = 5 \leq 8$.
+\[
+  v_E = \frac{r_c + e_{\mathrm{tpi}}}{2}
+      = \frac{0.7714 + 1}{2}
+      = 0.8857.
+\]
+
+\paragraph{Step 5 --- Coverage $C$.}
+Feedback is uninformative, so only the five observed base weights sum
+into the coverage.
+\[
+  C = 0.25 + 0.20 + 0.20 + 0.15 + 0.10 = 0.90.
+\]
+
+\paragraph{Step 6 --- Composite score $Q$.}
+The five component values are weighted, summed, and renormalised by the
+coverage so the missing Feedback weight does not drag the score down.
+\[
+  \sum_{i \in \calI} w_i v_i
+  = 0.25 \times 0.8573
+  + 0.20 \times 0.6974
+  + 0.20 \times 0.8700
+  + 0.15 \times 0.4662
+  + 0.10 \times 0.8857
+\]
+\[
+  \phantom{\sum_{i \in \calI} w_i v_i}
+  = 0.2143 + 0.1395 + 0.1740 + 0.0699 + 0.0886
+  = 0.6863,
+\]
+\[
+  Q = \frac{100}{C} \sum_{i \in \calI} w_i v_i
+    = \frac{100}{0.90} \times 0.6863
+    = 76.26 \quad (\text{grade: good}).
+\]
+
+\paragraph{Step 7 --- Confidence.}
+Each component's sample ramp saturates at five samples; only Efficiency,
+with 2 invocations, is still ramping.
+\[
+  \rho_R = \rho_A = \rho_\Phi = \rho_\Lambda = 1,
+  \qquad
+  \rho_E = \min(1,\; 2/5) = 0.40,
+\]
+\[
+  \rho = \frac{0.25 + 0.20 + 0.20 + 0.15 + 0.10 \times 0.40}{0.90}
+       = \frac{0.8400}{0.90}
+       = 0.9333,
+\]
+\[
+  \text{Confidence} = C \cdot \rho = 0.90 \times 0.9333 = 0.84.
+\]
+
+\paragraph{Step 8 --- Relative score.}
+Against a history window of $H = 20$ recent sessions with mean
+$\mu = 72.4$ and standard deviation $\sigma = 6.8$, of which 14 scored at
+or below $Q$:
+\[
+  z = \frac{76.26 - 72.4}{6.8} = \frac{3.86}{6.8} = 0.57,
+  \qquad
+  \text{PercentileRank} = \frac{14}{20} = 0.70
+  \quad (\text{at baseline}).
+\]
+
+The session reads as ``good (76.26) at confidence 0.84, at baseline for
+this user'': a well-evidenced, slightly above-average session whose main
+drag is latency ($v_\Lambda = 0.4662$).
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked composite-score example.}
+\label{tab:quality-engine-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$\hat{e}$ & weighted error rate & 0.0741 (7.4\,\%) & $4/54$; chat errors count double \\
+$v_R$ & reliability value & 0.8573 & quadratic penalty on $1-\hat{e}$ \\
+$v_A$ & acceptance value & 0.6974 & $0.6\alpha + 0.4\bar{s}$ \\
+$v_\Phi$ & friction value & 0.8700 & TFRA mean passed through \\
+$v_\Lambda$ & latency value & 0.4662 & $L(p_{50})$ at 1{,}950 ms \\
+$v_E$ & efficiency value & 0.8857 & mean of $r_c$ and $e_{\mathrm{tpi}}$ \\
+$C$ & coverage & 0.90 & Feedback ($w=0.10$) uninformative \\
+$Q$ & composite score & 76.26 points & weighted sum renormalised by $C$ \\
+Confidence & data backing & 0.84 & Efficiency ramp still at 0.40 \\
+$z$, PercentileRank & relative position & 0.57, 0.70 & at baseline in $H=20$ window \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Numerical Example}
 
 \begin{table}[h!]
@@ -354,6 +498,117 @@ Latency outlier & $0.30$ & one penalty only (worst tier wins) \\
 Repair loop & $0.10$ & binary \\
 \midrule
 Total possible & $1.55$ & but $\tau_i = \max(0, \cdot)$ floors at 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Worked Example}
+\label{sec:tfra-example}
+
+We score one realistic 5-turn session whose per-turn trace signals are
+given below.
+
+\begin{table}[h!]
+\centering
+\caption{Per-turn trace signals for the worked TFRA session.}
+\label{tab:tfra-inputs}
+\begin{tabular}{@{}crrrrrr@{}}
+\toprule
+Turn $i$ & $\text{TTFT}_i$ & $e^{\text{LLM}}_i$ & $e^{\text{tool}}_i$
+  & $c^{\text{LLM}}_i$ & $c^{\text{tool}}_i$
+  & $c^{\text{tool}}_i / \max(1, c^{\text{LLM}}_i)$ \\
+\midrule
+1 & $900\,\text{ms}$   & 0 & 0 & 1 & 2 & 2 \\
+2 & $1{,}000\,\text{ms}$ & 1 & 0 & 1 & 1 & 1 \\
+3 & $1{,}200\,\text{ms}$ & 0 & 1 & 2 & 4 & 2 \\
+4 & $1{,}500\,\text{ms}$ & 0 & 0 & 1 & 2 & 2 \\
+5 & $3{,}800\,\text{ms}$ & 0 & 2 & 2 & 8 & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Step 1 --- Session medians.}
+Both penalty rules are self-referential, so we first fix the session's
+median TTFT and median tool ratio ($n = 5$, odd, so the middle value).
+\[
+  m = \text{Median}(900, 1000, 1200, 1500, 3800) = 1{,}200\,\text{ms},
+\]
+\[
+  m_{\text{tr}} = \text{Median}(2, 1, 2, 2, 4) = 2.
+\]
+
+\paragraph{Step 2 --- Penalty thresholds.}
+The medians fix the concrete cutoffs every turn is judged against.
+\[
+  1.5\,m = 1{,}800\,\text{ms}, \qquad
+  3\,m = 3{,}600\,\text{ms}, \qquad
+  2\,m_{\text{tr}} = 4.
+\]
+
+\paragraph{Step 3 --- Worst turn written in full ($\tau_5$).}
+Turn 5 trips all three non-LLM penalties: two tool errors cost
+$0.15 \times \min(2,3) = 0.30$; its TTFT of $3{,}800\,\text{ms} \geq
+3{,}600\,\text{ms}$ costs $\Delta^{\text{lat}}_5 = 0.30$; and the repair
+test fires because $e^{\text{tool}}_5 = 2 > 0$, the tool ratio
+$8/2 = 4 \geq 2\,m_{\text{tr}} = 4$, and $c^{\text{tool}}_5 = 8 \geq 3$,
+costing $\Delta^{\text{rep}}_5 = 0.10$.
+\[
+  \tau_5 = \max\!\left(0,\;
+    1 - 0.35 \times \min(0, 2) - 0.15 \times \min(2, 3) - 0.30 - 0.10
+  \right)
+\]
+\[
+  \phantom{\tau_5}
+  = \max(0,\; 1 - 0 - 0.30 - 0.30 - 0.10)
+  = \max(0,\; 0.30)
+  = 0.30.
+\]
+
+\paragraph{Step 4 --- Remaining turns.}
+The other four turns each trip at most one penalty: all TTFTs are below
+$1{,}800\,\text{ms}$, and turn~3 fails the repair test since its tool
+ratio $2 < 4$.
+\[
+  \tau_1 = 1.00, \qquad
+  \tau_2 = 1 - 0.35 \times \min(1,2) = 0.65, \qquad
+  \tau_3 = 1 - 0.15 \times \min(1,3) = 0.85, \qquad
+  \tau_4 = 1.00.
+\]
+
+\paragraph{Step 5 --- Session mean $\bar{\tau}$.}
+The five turn scores are averaged; this mean is what feeds the Friction
+component of \S\ref{sec:quality-engine}.
+\[
+  \bar{\tau} = \frac{1.00 + 0.65 + 0.85 + 1.00 + 0.30}{5}
+             = \frac{3.80}{5}
+             = 0.76.
+\]
+
+\paragraph{Step 6 --- Best/worst turn selection.}
+Turns 1 and 4 tie at $\tau = 1.00$, so the tie-break picks the smaller
+TTFT; the worst turn is unambiguous.
+\[
+  i^* = 1 \quad (900\,\text{ms} < 1{,}500\,\text{ms}),
+  \qquad
+  i_- = 5 \quad (\tau_5 = 0.30).
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked TFRA example.}
+\label{tab:tfra-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$m$ & session median TTFT & 1{,}200 ms & middle of 5 sorted TTFTs \\
+$m_{\text{tr}}$ & median tool ratio & 2 & middle of 5 tool ratios \\
+$\Delta^{\text{lat}}_5$ & latency penalty, turn 5 & 0.30 & $3{,}800 \geq 3m = 3{,}600$ ms \\
+$\Delta^{\text{rep}}_5$ & repair penalty, turn 5 & 0.10 & errors + ratio $4 \geq 4$ + calls $\geq 3$ \\
+$\tau_5$ & worst turn score & 0.30 & three penalties stack \\
+$\tau_1, \ldots, \tau_4$ & other turn scores & 1.00, 0.65, 0.85, 1.00 & at most one penalty each \\
+$\bar{\tau}$ & session mean & 0.76 & $3.80 / 5$; feeds Friction \\
+$i^*$, $i_-$ & best/worst turns & 1, 5 & tie at 1.00 broken by TTFT \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -464,7 +719,7 @@ $F$ & $11/19 \approx 0.579$ & substantial rewrite detected \\
 \end{table}
 
 % ---- 4.4 Worked numerical example ----
-\subsection{Worked Numerical Example --- Full Session (4 Edits)}
+\subsection{Worked Example --- Full Session (4 Edits)}
 \label{sec:edit-survival-example}
 
 We trace a realistic 4-edit Python session end-to-end.  For each edit,
@@ -492,6 +747,8 @@ $k$ & Generated (excerpt) & Surviving (excerpt) & Event & $F_k$ & $R_k$ & Note \
 \end{table}
 
 \paragraph{Step 1 — Session means.}
+We average the four per-edit similarity scores and, separately, the four
+revert indicators, giving the session's two aggregate survival signals.
 \[
   \bar{F} = \frac{F_1 + F_2 + F_3 + F_4}{4}
            = \frac{1.000 + 0.857 + 0.579 + 0.000}{4}
@@ -504,6 +761,8 @@ $k$ & Generated (excerpt) & Surviving (excerpt) & Event & $F_k$ & $R_k$ & Note \
 \]
 
 \paragraph{Step 2 --- Combined survival score.}
+The two means are blended with the fixed weights: 0.4 on textual
+survival and 0.6 on the sturdier revert signal.
 \[
   S = 0.4\,\bar{F} + 0.6\,\bar{R}
     = 0.4 \times 0.6090 + 0.6 \times 0.7500
@@ -521,6 +780,24 @@ The four-gram signal is sensitive to small changes: edit~2 loses only one
 4-gram out of seven ($F_2 = 6/7 \approx 0.857$), confirming that appending
 \texttt{* 2} is a minor extension rather than a replacement.
 \end{remark}
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked edit-survival example.}
+\label{tab:edit-survival-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$F_1, \ldots, F_4$ & per-edit four-gram survival & 1.000, 0.857, 0.579, 0.000 & shingle overlap per edit \\
+$R_1, \ldots, R_4$ & per-edit revert indicators & 1, 1, 1, 0 & edit 4 was undone \\
+$\bar{F}$ & mean four-gram survival & 0.6090 & $2.436 / 4$ \\
+$\bar{R}$ & mean revert survival & 0.7500 & $3 / 4$ \\
+$S$ & combined survival score & 0.6936 & $0.4\bar{F} + 0.6\bar{R}$ \\
+Band & interpretation & $[0.5, 0.8)$ & partial rework \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ---- 4.5 Weight sensitivity ----
 \subsection{Weight Sensitivity}
@@ -665,6 +942,99 @@ Perfect, moderate LOC & 1.00 & 8.0 & 0.76 & high throughput \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:throughput-example}
+
+We trace one realistic refactoring session end-to-end.  The assistant
+proposed $a + j = 20$ edits over the session: $a = 14$ edits were accepted
+and $j = 6$ edits were rejected.  The accepted edits contributed
+$L = 220$ lines added across $T = 10$ turns, and the model emitted
+$O = 5{,}500$ output tokens in total.
+
+\paragraph{Step 1 --- Acceptance ratio $\alpha$.}
+First we measure what fraction of the assistant's proposals the user
+actually kept, which is the quality signal that dominates the score.
+\[
+  \alpha = \frac{a}{a+j}
+         = \frac{14}{14+6}
+         = \frac{14}{20}
+         = 0.70 \quad (\text{dimensionless, i.e.\ } 70\,\%).
+\]
+
+\paragraph{Step 2 --- Acceptance-adjusted LOC per turn $\ell_{\text{adj}}$.}
+Next we convert raw volume into \emph{useful} volume: the lines added are
+discounted by the acceptance ratio, then normalised per turn so long
+sessions are not favoured.
+\[
+  \ell_{\text{adj}} = \frac{L \cdot \alpha}{T}
+                    = \frac{220\,\text{LOC} \times 0.70}{10\,\text{turns}}
+                    = \frac{154\,\text{LOC}}{10\,\text{turns}}
+                    = 15.4\ \text{accepted LOC/turn}.
+\]
+
+\paragraph{Step 3 --- Token-normalised density $\ell_{\text{tok}}$ (optional).}
+The optional diagnostic relates lines produced to tokens spent; it does not
+enter the score but flags verbose models.
+\[
+  \ell_{\text{tok}} = \frac{L}{O/1000}
+                    = \frac{220\,\text{LOC}}{5{,}500/1000\,\text{kTok}}
+                    = \frac{220\,\text{LOC}}{5.5\,\text{kTok}}
+                    = 40\ \text{LOC/kTok}.
+\]
+
+\paragraph{Step 4 --- LOC saturation term.}
+The LOC component is capped so that sheer volume beyond 20 accepted
+LOC/turn earns no extra credit; here the session sits just below the cap.
+\[
+  \min\!\left(1,\;\frac{\ell_{\text{adj}}}{20}\right)
+  = \min\!\left(1,\;\frac{15.4}{20}\right)
+  = \min(1,\;0.77)
+  = 0.77.
+\]
+
+\paragraph{Step 5 --- Weighted combination.}
+We blend the two components with the fixed weights: 0.6 on acceptance
+(quality) and 0.4 on saturated LOC rate (volume).
+\[
+  0.6\alpha + 0.4 \times 0.77
+  = 0.6 \times 0.70 + 0.4 \times 0.77
+  = 0.420 + 0.308
+  = 0.728.
+\]
+
+\paragraph{Step 6 --- Clamp.}
+Finally the result is clamped to $[0,1]$; since $0.728$ already lies inside
+the interval, the clamp is the identity here.
+\[
+  \text{Score} = \clamp{0.728}{0}{1} = 0.728.
+\]
+
+The session scores $0.728$ --- between the ``Good acceptance, low LOC''
+and ``Perfect, moderate LOC'' scenarios above: a solid, near-saturation
+volume of accepted code, held back mainly by the 30\,\% rejection rate.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked throughput example.}
+\label{tab:throughput-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$a$ & edits accepted & 14 edits & raw input from telemetry \\
+$j$ & edits rejected & 6 edits & raw input from telemetry \\
+$\alpha$ & acceptance ratio & 0.70 (70\,\%) & $14/20$; quality signal \\
+$L$ & lines added & 220 LOC & raw input from telemetry \\
+$T$ & number of turns & 10 turns & normalises volume per turn \\
+$\ell_{\text{adj}}$ & accepted LOC per turn & 15.4 LOC/turn & $220 \times 0.70 / 10$ \\
+$O$ & output tokens & 5{,}500 tokens & raw input from telemetry \\
+$\ell_{\text{tok}}$ & LOC per kilotoken & 40 LOC/kTok & $220/5.5$; diagnostic only \\
+--- & saturation term & 0.77 & $\min(1, 15.4/20)$; below cap \\
+Score & throughput score & 0.728 & $0.6 \times 0.70 + 0.4 \times 0.77$, clamped \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Latency-Utility Model}
 \label{sec:latency-utility}
@@ -704,11 +1074,11 @@ Key landmark values:
 TTFT $t$ & $U(t)$ \\
 \midrule
 $\leq 300\,\text{ms}$ & $1.000$ (perceptual immediacy) \\
-$500\,\text{ms}$ & $0.903$ \\
-$1{,}000\,\text{ms}$ & $0.796$ \\
-$2{,}000\,\text{ms}$ & $0.670$ (attention degradation threshold) \\
-$4{,}000\,\text{ms}$ & $0.512$ \\
-$8{,}000\,\text{ms}$ & $0.329$ (abandonment risk threshold) \\
+$500\,\text{ms}$ & $0.854$ \\
+$1{,}000\,\text{ms}$ & $0.657$ \\
+$2{,}000\,\text{ms}$ & $0.459$ (attention degradation threshold) \\
+$4{,}000\,\text{ms}$ & $0.261$ \\
+$8{,}000\,\text{ms}$ & $0.064$ (abandonment risk threshold) \\
 $10{,}000\,\text{ms}$ & $0.000$ (flow fully disrupted) \\
 \bottomrule
 \end{tabular}
@@ -726,6 +1096,110 @@ Risk fractions:
   f_{\text{ab}} = \frac{|\{i : t_i > 8000\}|}{N}.
 \]
 The score returned to the composite pipeline is $\bar{U}$.
+
+\subsection{Worked Example}
+\label{sec:latency-utility-example}
+
+We evaluate one realistic $N = 6$-turn session whose per-turn TTFT samples
+are
+\[
+  (t_1, \ldots, t_6)
+  = (250,\; 600,\; 1{,}500,\; 2{,}400,\; 3{,}000,\; 9{,}000)\ \text{ms}.
+\]
+
+\paragraph{Step 1 --- Normalising constant.}
+The denominator of the log-linear branch depends only on the curve's two
+endpoints, so we compute it once and reuse it for every sample.
+\[
+  \ln\!\left(\frac{10000}{300}\right) = \ln(33.333) = 3.5066.
+\]
+
+\paragraph{Step 2 --- Per-sample utilities.}
+Each sample is pushed through $U(t)$ independently; we write out the second
+sample in full and tabulate the remaining five identically.
+\[
+  U(t_2) = 1 - \frac{\ln(600/300)}{3.5066}
+         = 1 - \frac{\ln 2}{3.5066}
+         = 1 - \frac{0.6931}{3.5066}
+         = 1 - 0.1977
+         = 0.8023.
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Per-sample utilities for the worked session.}
+\label{tab:latency-per-sample}
+\begin{tabular}{@{}crlrrr@{}}
+\toprule
+$i$ & $t_i$ & Branch of $U$ & $\ln(t_i/300)$ & $\ln(t_i/300)/3.5066$ & $U(t_i)$ \\
+\midrule
+1 & $250\,\text{ms}$   & $t \leq 300\,\text{ms}$ (clamp) & --- & --- & $1.0000$ \\
+2 & $600\,\text{ms}$   & log-linear & $0.6931$ & $0.1977$ & $0.8023$ \\
+3 & $1{,}500\,\text{ms}$ & log-linear & $1.6094$ & $0.4590$ & $0.5410$ \\
+4 & $2{,}400\,\text{ms}$ & log-linear & $2.0794$ & $0.5930$ & $0.4070$ \\
+5 & $3{,}000\,\text{ms}$ & log-linear & $2.3026$ & $0.6567$ & $0.3433$ \\
+6 & $9{,}000\,\text{ms}$ & log-linear & $3.4012$ & $0.9700$ & $0.0300$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Step 3 --- Mean utility $\bar{U}$.}
+The six per-sample utilities are averaged; this mean is the session-level
+score, so every slow turn drags it down proportionally.
+\[
+  \sum_{i=1}^{6} U(t_i)
+  = 1.0000 + 0.8023 + 0.5410 + 0.4070 + 0.3433 + 0.0300
+  = 3.1236,
+\]
+\[
+  \bar{U} = \frac{1}{N}\sum_{i=1}^{N} U(t_i)
+          = \frac{3.1236}{6}
+          = 0.5206.
+\]
+
+\paragraph{Step 4 --- Degradation fraction $f_{\text{deg}}$.}
+We count the samples above the $2{,}000\,\text{ms}$ attention-degradation
+threshold ($t_4$, $t_5$, $t_6$) and divide by $N$.
+\[
+  f_{\text{deg}} = \frac{|\{i : t_i > 2000\}|}{N}
+                 = \frac{3}{6}
+                 = 0.500 \quad (50.0\,\%).
+\]
+
+\paragraph{Step 5 --- Abandonment fraction $f_{\text{ab}}$.}
+We count the samples above the $8{,}000\,\text{ms}$ abandonment-risk
+threshold (only $t_6$) and divide by $N$.
+\[
+  f_{\text{ab}} = \frac{|\{i : t_i > 8000\}|}{N}
+                = \frac{1}{6}
+                = 0.167 \quad (16.7\,\%).
+\]
+
+The score returned to the composite pipeline is $\bar{U} = 0.5206$.  This
+illustrates the motivation above: the session's median TTFT,
+$(t_3 + t_4)/2 = 1{,}950\,\text{ms}$, sits below the degradation threshold
+and would look acceptable as a point estimate, yet the per-sample mean
+$\bar{U} = 0.52$ together with $f_{\text{ab}} = 1/6$ exposes that half the
+turns degrade attention and one turn approaches full flow disruption.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked latency-utility example.}
+\label{tab:latency-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$N$ & number of TTFT samples & 6 turns & raw input from telemetry \\
+$t_i$ & per-turn TTFT samples & 250--9{,}000 ms & each pushed through $U$ \\
+$\ln(10000/300)$ & normalising constant & 3.5066 & computed once; fixes slope \\
+$U(t_i)$ & per-sample utilities & 1.0000--0.0300 & clamp at ends, log-linear between \\
+$\bar{U}$ & mean utility & 0.5206 & $3.1236 / 6$; pipeline score \\
+$f_{\text{deg}}$ & degradation fraction & 0.500 (50.0\,\%) & 3 of 6 samples $> 2{,}000$ ms \\
+$f_{\text{ab}}$ & abandonment fraction & 0.167 (16.7\,\%) & 1 of 6 samples $> 8{,}000$ ms \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ------------------------------------------------------------
 \section{Token \& Cache Economics}
@@ -770,6 +1244,128 @@ Each cache-read token avoids paying the full input price:
 A ratio $r_c \geq 0.5$ indicates that the prompt cache is doing heavy lifting;
 $r_c < 0.1$ with large context ($> 50{,}000$ prompt tokens) flags fresh-context
 waste.  The score fed to the efficiency component is $r_c$.
+
+\subsection{Worked Example}
+\label{sec:token-economics-example}
+
+We cost one realistic session that used two models: a primary model
+$m_1 = \texttt{claude-sonnet}$ for code generation and a cheaper
+$m_2 = \texttt{gpt-4o-mini}$ for summarisation, with token counts
+\[
+  (I_{m_1}, O_{m_1}, C_{m_1}) = (120{,}000,\; 30{,}000,\; 480{,}000)\ \text{tokens},
+\]
+\[
+  (I_{m_2}, O_{m_2}, C_{m_2}) = (40{,}000,\; 10{,}000,\; 60{,}000)\ \text{tokens}.
+\]
+
+\paragraph{Step 1 --- Price resolution.}
+Each model name is resolved against the price sheet by longest-prefix
+matching; note that \texttt{gpt-4o-mini} matches its own key rather than
+being swallowed by the shorter prefix \texttt{gpt-4o}.
+\[
+  (p^{m_1}_{\text{in}},\, p^{m_1}_{\text{out}},\, p^{m_1}_{\text{cache}})
+  = (3.00,\; 15.00,\; 0.30)\ \text{USD/MTok},
+\]
+\[
+  (p^{m_2}_{\text{in}},\, p^{m_2}_{\text{out}},\, p^{m_2}_{\text{cache}})
+  = (0.15,\; 0.60,\; 0.075)\ \text{USD/MTok}.
+\]
+
+\paragraph{Step 2 --- Cost of $m_1$.}
+The three token counts are scaled to millions and multiplied by their
+respective per-MTok prices, then summed.
+\[
+  \text{Cost}_{m_1}
+  = \frac{120{,}000}{10^6} \times 3.00
+  + \frac{30{,}000}{10^6} \times 15.00
+  + \frac{480{,}000}{10^6} \times 0.30
+\]
+\[
+  \phantom{\text{Cost}_{m_1}}
+  = 0.12 \times 3.00 + 0.03 \times 15.00 + 0.48 \times 0.30
+  = 0.3600 + 0.4500 + 0.1440
+  = \$0.9540.
+\]
+
+\paragraph{Step 3 --- Cost of $m_2$.}
+The same formula is applied to the summarisation model, whose prices are
+an order of magnitude lower.
+\[
+  \text{Cost}_{m_2}
+  = \frac{40{,}000}{10^6} \times 0.15
+  + \frac{10{,}000}{10^6} \times 0.60
+  + \frac{60{,}000}{10^6} \times 0.075
+\]
+\[
+  \phantom{\text{Cost}_{m_2}}
+  = 0.04 \times 0.15 + 0.01 \times 0.60 + 0.06 \times 0.075
+  = 0.0060 + 0.0060 + 0.0045
+  = \$0.0165.
+\]
+
+\paragraph{Step 4 --- Session total.}
+The per-model costs are summed over the two models used.
+\[
+  \text{Total} = \sum_m \text{Cost}_m
+               = 0.9540 + 0.0165
+               = \$0.9705.
+\]
+
+\paragraph{Step 5 --- Cache savings.}
+For each model, every cache-read token avoided paying the full input price,
+so the saving is the cache volume times the price gap.
+\[
+  \text{Savings}_{m_1}
+  = \frac{480{,}000}{10^6} \times \max(0,\; 3.00 - 0.30)
+  = 0.48 \times 2.70
+  = \$1.2960,
+\]
+\[
+  \text{Savings}_{m_2}
+  = \frac{60{,}000}{10^6} \times \max(0,\; 0.15 - 0.075)
+  = 0.06 \times 0.075
+  = \$0.0045,
+\]
+\[
+  \text{Savings} = 1.2960 + 0.0045 = \$1.3005.
+\]
+
+\paragraph{Step 6 --- Cache hit ratio $r_c$.}
+Finally we measure what fraction of all prompt tokens were served from
+cache rather than paid at the full input price.
+\[
+  r_c = \frac{\sum_m C_m}{\sum_m (I_m + C_m)}
+      = \frac{480{,}000 + 60{,}000}{(120{,}000 + 480{,}000) + (40{,}000 + 60{,}000)}
+      = \frac{540{,}000}{700{,}000}
+      = 0.771.
+\]
+
+Since $r_c = 0.771 \geq 0.5$, the prompt cache is doing heavy lifting.
+Without caching the session would have cost
+$0.9705 + 1.3005 = \$2.2710$, so cache reads cut spend by
+$1.3005 / 2.2710 \approx 57\,\%$.  The score fed to the efficiency
+component is $r_c = 0.771$.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked token-economics example.}
+\label{tab:token-economics-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$(I_{m_1}, O_{m_1}, C_{m_1})$ & $m_1$ token counts & $(120, 30, 480)$ kTok & raw input from telemetry \\
+$(I_{m_2}, O_{m_2}, C_{m_2})$ & $m_2$ token counts & $(40, 10, 60)$ kTok & raw input from telemetry \\
+$p^{m_1}$ & $m_1$ prices (in/out/cache) & $(3.00, 15.00, 0.30)$ \$/MTok & prefix-matched price sheet \\
+$p^{m_2}$ & $m_2$ prices (in/out/cache) & $(0.15, 0.60, 0.075)$ \$/MTok & longest prefix beats \texttt{gpt-4o} \\
+$\text{Cost}_{m_1}$ & primary-model cost & \$0.9540 & three price terms summed \\
+$\text{Cost}_{m_2}$ & summariser cost & \$0.0165 & same formula, cheaper sheet \\
+Total & session cost & \$0.9705 & sum over both models \\
+Savings & cache savings & \$1.3005 & cache volume $\times$ price gap \\
+$r_c$ & cache hit ratio & 0.771 (77.1\,\%) & $540\text{k} / 700\text{k}$; efficiency score \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ------------------------------------------------------------
 \section{Lexical Frustration Classifier}
@@ -848,6 +1444,112 @@ $< 0.25$ & No meaningful frustration signals \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:frustration-example}
+
+We classify one realistic 4-message exchange:
+\begin{itemize}
+  \item $x_1$: \textit{``Add pagination to the results table''}
+  \item $x_2$: \textit{``add pagination to the results table component''}
+  \item $x_3$: \textit{``this is STILL NOT WORKING??''}
+  \item $x_4$: \textit{``no, revert that''}
+\end{itemize}
+
+\paragraph{Step 1 --- Baseline message $f_1$.}
+The opening request carries no lexicon markers, has no previous message
+to rephrase, and is typographically calm, so every term is zero.
+\[
+  f_1 = \min(1,\; 0) = 0.00.
+\]
+
+\paragraph{Step 2 --- Rephrasing signal $f_2$.}
+Message $x_2$ nearly repeats $x_1$, so only the Jaccard indicator fires.
+Tokenising with length $> 2$ gives
+$\calW_{x_1} = \{\text{add}, \text{pagination}, \text{the},
+\text{results}, \text{table}\}$ and
+$\calW_{x_2} = \calW_{x_1} \cup \{\text{component}\}$:
+\[
+  J(x_2, x_1) = \frac{|\calW_{x_2} \cap \calW_{x_1}|}{|\calW_{x_2} \cup \calW_{x_1}|}
+              = \frac{5}{6}
+              = 0.833 \;\geq\; 0.6,
+\]
+\[
+  f_2 = \min(1,\; 0.30 \times 1) = 0.30.
+\]
+
+\paragraph{Step 3 --- Peak message $f_3$.}
+Message $x_3$ trips four signals: one strong marker
+(\textit{``not working''}, $h^s_3 = 1$), one mild marker
+(\textit{``still''}, $h^m_3 = 1$), sustained CAPS (15 of 21 letters
+uppercase, $71\,\% > 60\,\%$ over $\geq 12$ letters), and a
+\texttt{??}~punctuation burst.
+\[
+  f_3 = \min\!\left(1,\;
+    0.45 \times \min(1,2)
+    + 0.15 \times \min(1,3)
+    + 0.15
+    + 0.10
+  \right)
+\]
+\[
+  \phantom{f_3}
+  = \min(1,\; 0.45 + 0.15 + 0.15 + 0.10)
+  = \min(1,\; 0.85)
+  = 0.85.
+\]
+
+\paragraph{Step 4 --- Short corrective reply $f_4$.}
+Message $x_4$ contains two mild markers (\textit{``no,''} and
+\textit{``revert''}, $h^m_4 = 2$) and is a short corrective: 15
+characters $< 20$, starting with ``no''.
+\[
+  f_4 = \min\!\left(1,\; 0.15 \times \min(2,3) + 0.20\right)
+      = \min(1,\; 0.30 + 0.20)
+      = 0.50.
+\]
+
+\paragraph{Step 5 --- Session mean $\bar{f}$.}
+The four per-message scores are averaged.
+\[
+  \bar{f} = \frac{0.00 + 0.30 + 0.85 + 0.50}{4}
+          = \frac{1.65}{4}
+          = 0.4125.
+\]
+
+\paragraph{Step 6 --- Session frustration index $F$.}
+The mean alone would dilute the angry message, so the index is pulled
+halfway toward the peak $\max_i f_i = 0.85$.
+\[
+  F = \bar{f} + 0.5\left(\max_i f_i - \bar{f}\right)
+    = 0.4125 + 0.5 \times (0.85 - 0.4125)
+    = 0.4125 + 0.2188
+    = 0.631.
+\]
+
+Since $F = 0.631 \geq 0.5$, the session reports \emph{clear frustration
+signals}; messages $x_3$ and $x_4$ are flagged with their reasons for
+human review, per the report-only design philosophy.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked frustration example.}
+\label{tab:frustration-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$f_1$ & baseline message score & 0.00 & no signals fire \\
+$J(x_2, x_1)$ & rephrasing similarity & 0.833 & $5/6$ shared tokens; $\geq 0.6$ \\
+$f_2$ & rephrased message score & 0.30 & Jaccard indicator only \\
+$f_3$ & peak message score & 0.85 & strong + mild + CAPS + punct \\
+$f_4$ & corrective reply score & 0.50 & two mild markers + short ``no'' \\
+$\bar{f}$ & session mean & 0.4125 & $1.65 / 4$ \\
+$\max_i f_i$ & session peak & 0.85 & message $x_3$ \\
+$F$ & frustration index & 0.631 & mean pulled halfway to peak \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Order-Statistic Percentile}
 \label{sec:percentile}
@@ -875,6 +1577,75 @@ sensitive to outliers in that regime.
 
 \paragraph{Edge cases.}
 Empty list returns~0.  A single-element list returns that element for all~$p$.
+
+\subsection{Worked Example}
+\label{sec:percentile-example}
+
+We evaluate three quantiles over one session's $n = 8$ sorted TTFT
+samples (the clamp maps the rank to a zero-based position in the sorted
+list):
+\[
+  V = (420,\; 610,\; 780,\; 950,\; 1{,}200,\; 1{,}900,\; 2{,}600,\; 4{,}100)\ \text{ms}.
+\]
+
+\paragraph{Step 1 --- Median ($p = 0.50$).}
+We scale the quantile by $n$, take the ceiling, shift to a zero-based
+position, and clamp it into range.
+\[
+  \lceil 0.50 \times 8 \rceil - 1 = \lceil 4 \rceil - 1 = 3,
+  \qquad
+  \clamp{3}{0}{7} = 3,
+\]
+\[
+  \text{Percentile}(V, 0.50) = v_{(3)} = 950\,\text{ms}.
+\]
+
+\paragraph{Step 2 --- Lower quartile ($p = 0.25$).}
+The same three operations with $p = 0.25$.
+\[
+  \lceil 0.25 \times 8 \rceil - 1 = \lceil 2 \rceil - 1 = 1,
+  \qquad
+  \clamp{1}{0}{7} = 1,
+\]
+\[
+  \text{Percentile}(V, 0.25) = v_{(1)} = 610\,\text{ms}.
+\]
+
+\paragraph{Step 3 --- Tail ($p = 0.95$).}
+At the tail the ceiling rounds $7.6$ up to the last position, so the
+method returns the largest observed sample.
+\[
+  \lceil 0.95 \times 8 \rceil - 1 = \lceil 7.6 \rceil - 1 = 8 - 1 = 7,
+  \qquad
+  \clamp{7}{0}{7} = 7,
+\]
+\[
+  \text{Percentile}(V, 0.95) = v_{(7)} = 4{,}100\,\text{ms}.
+\]
+
+This illustrates the small-$n$ divergence noted above: linear
+interpolation at $p = 0.95$ would report
+$2{,}600 + 0.65 \times (4{,}100 - 2{,}600) = 3{,}575\,\text{ms}$, a
+hypothetical value $525\,\text{ms}$ below the real measurement the
+nearest-rank method returns.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked percentile example.}
+\label{tab:percentile-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$n$ & sample count & 8 samples & sorted TTFT list \\
+$p$ & quantiles evaluated & 0.25, 0.50, 0.95 & scaled by $n$, ceiled \\
+$\text{Percentile}(V, 0.50)$ & median & 950 ms & position 3 after clamp \\
+$\text{Percentile}(V, 0.25)$ & lower quartile & 610 ms & position 1 after clamp \\
+$\text{Percentile}(V, 0.95)$ & tail latency & 4{,}100 ms & ceiling lands on last sample \\
+--- & interpolated p95 & 3{,}575 ms & 525 ms below observed; not used \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ------------------------------------------------------------
 \section{Custom Protobuf Decoder}
@@ -924,6 +1695,82 @@ The \texttt{OtlpDecoder} traverses resource spans, scope spans, and
 individual \texttt{Span} records, extracting attributes by name
 (e.g.\ \texttt{gen\_ai.usage.input\_tokens}) and routing them to the
 appropriate session aggregate.
+
+\subsection{Worked Example}
+\label{sec:proto-example}
+
+We decode a realistic three-byte fragment carrying a token count of a
+\texttt{gen\_ai.usage} attribute --- say field number~2 holding the value
+150 tokens:
+\[
+  \texttt{0x10}\;\; \texttt{0x96}\;\; \texttt{0x01}.
+\]
+
+\paragraph{Step 1 --- Tag decoding.}
+The first byte is the tag; splitting it per the tag formula yields the
+field number (upper bits) and the wire type (lower three bits).
+\[
+  \text{tag} = \texttt{0x10} = 16,
+\]
+\[
+  \text{field\_number} = 16 \gg 3 = 2,
+  \qquad
+  \text{wire\_type} = 16 \;\&\; 7 = 0 \quad (\text{varint}).
+\]
+
+\paragraph{Step 2 --- Continuation bits.}
+Wire type 0 tells the decoder to read a varint next; each byte's MSB says
+whether another byte follows.
+\[
+  b_0 = \texttt{0x96} = 1001\,0110_2:\quad
+  b_0 \;\&\; \texttt{0x80} = \texttt{0x80} \neq 0
+  \;\Rightarrow\; \text{continue},
+\]
+\[
+  b_1 = \texttt{0x01} = 0000\,0001_2:\quad
+  b_1 \;\&\; \texttt{0x80} = 0
+  \;\Rightarrow\; \text{stop after } K = 2 \text{ bytes}.
+\]
+
+\paragraph{Step 3 --- Payload extraction.}
+Masking each byte with \texttt{0x7F} keeps its 7 payload bits.
+\[
+  b_0 \;\&\; \texttt{0x7F} = \texttt{0x16} = 22,
+  \qquad
+  b_1 \;\&\; \texttt{0x7F} = \texttt{0x01} = 1.
+\]
+
+\paragraph{Step 4 --- Little-endian reassembly.}
+The payloads are shifted into place, 7 bits per byte, least-significant
+group first, and summed per the varint formula.
+\[
+  v = \sum_{k=0}^{1} (b_k \;\&\; \texttt{0x7F}) \ll 7k
+    = 22 \ll 0 \;+\; 1 \ll 7
+    = 22 + 128
+    = 150.
+\]
+
+The decoder therefore records \texttt{input\_tokens} $= 150$ tokens ---
+a two-byte varint, versus eight bytes for a fixed-width 64-bit integer.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked protobuf-decoding example.}
+\label{tab:proto-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+tag & first byte & \texttt{0x10} (16) & split into field and wire type \\
+field\_number & which field & 2 & $16 \gg 3$ \\
+wire\_type & how to read it & 0 (varint) & $16 \;\&\; 7$ \\
+$b_0$ & first varint byte & \texttt{0x96} & MSB set: continue \\
+$b_1$ & second varint byte & \texttt{0x01} & MSB clear: stop, $K = 2$ \\
+$b_k \;\&\; \texttt{0x7F}$ & payload bits & 22, 1 & 7 bits kept per byte \\
+$v$ & decoded value & 150 tokens & $22 + (1 \ll 7)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ------------------------------------------------------------
 \section{Pipeline Integration}
