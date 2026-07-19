@@ -1696,6 +1696,82 @@ individual \texttt{Span} records, extracting attributes by name
 (e.g.\ \texttt{gen\_ai.usage.input\_tokens}) and routing them to the
 appropriate session aggregate.
 
+\subsection{Worked Example}
+\label{sec:proto-example}
+
+We decode a realistic three-byte fragment carrying a token count of a
+\texttt{gen\_ai.usage} attribute --- say field number~2 holding the value
+150 tokens:
+\[
+  \texttt{0x10}\;\; \texttt{0x96}\;\; \texttt{0x01}.
+\]
+
+\paragraph{Step 1 --- Tag decoding.}
+The first byte is the tag; splitting it per the tag formula yields the
+field number (upper bits) and the wire type (lower three bits).
+\[
+  \text{tag} = \texttt{0x10} = 16,
+\]
+\[
+  \text{field\_number} = 16 \gg 3 = 2,
+  \qquad
+  \text{wire\_type} = 16 \;\&\; 7 = 0 \quad (\text{varint}).
+\]
+
+\paragraph{Step 2 --- Continuation bits.}
+Wire type 0 tells the decoder to read a varint next; each byte's MSB says
+whether another byte follows.
+\[
+  b_0 = \texttt{0x96} = 1001\,0110_2:\quad
+  b_0 \;\&\; \texttt{0x80} = \texttt{0x80} \neq 0
+  \;\Rightarrow\; \text{continue},
+\]
+\[
+  b_1 = \texttt{0x01} = 0000\,0001_2:\quad
+  b_1 \;\&\; \texttt{0x80} = 0
+  \;\Rightarrow\; \text{stop after } K = 2 \text{ bytes}.
+\]
+
+\paragraph{Step 3 --- Payload extraction.}
+Masking each byte with \texttt{0x7F} keeps its 7 payload bits.
+\[
+  b_0 \;\&\; \texttt{0x7F} = \texttt{0x16} = 22,
+  \qquad
+  b_1 \;\&\; \texttt{0x7F} = \texttt{0x01} = 1.
+\]
+
+\paragraph{Step 4 --- Little-endian reassembly.}
+The payloads are shifted into place, 7 bits per byte, least-significant
+group first, and summed per the varint formula.
+\[
+  v = \sum_{k=0}^{1} (b_k \;\&\; \texttt{0x7F}) \ll 7k
+    = 22 \ll 0 \;+\; 1 \ll 7
+    = 22 + 128
+    = 150.
+\]
+
+The decoder therefore records \texttt{input\_tokens} $= 150$ tokens ---
+a two-byte varint, versus eight bytes for a fixed-width 64-bit integer.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked protobuf-decoding example.}
+\label{tab:proto-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+tag & first byte & \texttt{0x10} (16) & split into field and wire type \\
+field\_number & which field & 2 & $16 \gg 3$ \\
+wire\_type & how to read it & 0 (varint) & $16 \;\&\; 7$ \\
+$b_0$ & first varint byte & \texttt{0x96} & MSB set: continue \\
+$b_1$ & second varint byte & \texttt{0x01} & MSB clear: stop, $K = 2$ \\
+$b_k \;\&\; \texttt{0x7F}$ & payload bits & 22, 1 & 7 bits kept per byte \\
+$v$ & decoded value & 150 tokens & $22 + (1 \ll 7)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Pipeline Integration}
 \label{sec:pipeline}
