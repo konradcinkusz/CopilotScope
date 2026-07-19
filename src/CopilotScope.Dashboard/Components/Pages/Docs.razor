@@ -35,6 +35,7 @@
             <code>cursor.*</code>) are normalized to the internal <code>copilot_chat.*</code> schema at
             ingest time, so all sources share the same aggregation, quality scoring, and dashboard.
         </p>
+        <div class="table-wrap">
         <table class="doc-table">
             <thead><tr><th>Source</th><th>Label</th><th>How to enable</th><th>Notes</th></tr></thead>
             <tbody>
@@ -89,6 +90,7 @@
                 </tr>
             </tbody>
         </table>
+        </div>
         <p>
             <b>Adding a new source:</b> any tool that emits OTLP/HTTP to port 4318 with standard
             <code>gen_ai.*</code> attributes (operation name, conversation id, token counts) will be
@@ -134,6 +136,7 @@
             <code>confidence = weight coverage × sample ramp</code> — a 91 at 15% confidence reads as
             "early but promising", not "certain". Compare scores only at comparable confidence.
         </p>
+        <div class="table-wrap">
         <table class="doc-table">
             <thead><tr><th>Component</th><th>Weight</th><th>What it measures</th><th>Why it's in the score</th><th>Caveats</th></tr></thead>
             <tbody>
@@ -145,6 +148,7 @@
                 <tr><td>efficiency</td><td>0.10</td><td>Cache-hit ratio + turns-per-invocation sanity (≤8 healthy).</td><td>Detects context waste and agents that spiral.</td><td>Cache behavior is partly model-side, not user-controlled.</td></tr>
             </tbody>
         </table>
+        </div>
         <p>Grades: ≥85 excellent · ≥70 good · ≥55 fair · ≥40 poor · below — critical. A session with no signals at all shows the neutral prior 70 at confidence 0%.</p>
     </section>
 
@@ -167,6 +171,7 @@
 
     <section id="tiles" class="panel doc-section">
         <h2>Tiles reference</h2>
+        <div class="table-wrap">
         <table class="doc-table">
             <thead><tr><th>Tile</th><th>Meaning &amp; how to read it</th><th>Source</th><th>Surfaces</th></tr></thead>
             <tbody>
@@ -183,6 +188,7 @@
                 <tr><td>lines of code</td><td>Lines added/removed by accepted suggestions.</td><td><code>lines_of_code</code> metric</td><td><b>VS Code only</b></td></tr>
             </tbody>
         </table>
+        </div>
         <p>Tiles that a surface cannot emit stay at 0 <b>and are excluded from the quality score</b> — a CLI session is judged on what it did produce, not punished for editor-only signals.</p>
     </section>
 
@@ -226,6 +232,7 @@
             on a long session may indicate context fragmentation or frequent context resets.
         </p>
         <h3>What can and cannot be computed from OTel telemetry</h3>
+        <div class="table-wrap">
         <table class="doc-table">
             <thead><tr><th>Question</th><th>Computable?</th><th>How</th></tr></thead>
             <tbody>
@@ -237,6 +244,7 @@
                 <tr><td>Tokens in my actual typed message</td><td>❌ no</td><td>The OTel span carries the total prompt (system + history + message), not individual parts</td></tr>
             </tbody>
         </table>
+        </div>
     </section>
 
     <section id="insights" class="panel doc-section">
@@ -311,6 +319,7 @@
             (full survey with sources: <code>docs/ANALYSIS.md</code> in the repository). Current status
             of each:
         </p>
+        <div class="table-wrap">
         <table class="doc-table">
             <thead><tr><th>#</th><th>Algorithm</th><th>Status</th><th>Where / why not</th></tr></thead>
             <tbody>
@@ -326,6 +335,7 @@
                 <tr><td>10</td><td>Task-completion detection</td><td>❌ not implemented</td><td>Needs completion signals (builds, tests) that Copilot telemetry does not carry.</td></tr>
             </tbody>
         </table>
+        </div>
         <p>
             The <i>reliability</i> and <i>feedback</i> components sit outside this list — they are direct
             signals rather than algorithms. Analyzers 4–9 run as a pluggable pipeline
