@@ -968,6 +968,128 @@ A ratio $r_c \geq 0.5$ indicates that the prompt cache is doing heavy lifting;
 $r_c < 0.1$ with large context ($> 50{,}000$ prompt tokens) flags fresh-context
 waste.  The score fed to the efficiency component is $r_c$.
 
+\subsection{Worked Example}
+\label{sec:token-economics-example}
+
+We cost one realistic session that used two models: a primary model
+$m_1 = \texttt{claude-sonnet}$ for code generation and a cheaper
+$m_2 = \texttt{gpt-4o-mini}$ for summarisation, with token counts
+\[
+  (I_{m_1}, O_{m_1}, C_{m_1}) = (120{,}000,\; 30{,}000,\; 480{,}000)\ \text{tokens},
+\]
+\[
+  (I_{m_2}, O_{m_2}, C_{m_2}) = (40{,}000,\; 10{,}000,\; 60{,}000)\ \text{tokens}.
+\]
+
+\paragraph{Step 1 --- Price resolution.}
+Each model name is resolved against the price sheet by longest-prefix
+matching; note that \texttt{gpt-4o-mini} matches its own key rather than
+being swallowed by the shorter prefix \texttt{gpt-4o}.
+\[
+  (p^{m_1}_{\text{in}},\, p^{m_1}_{\text{out}},\, p^{m_1}_{\text{cache}})
+  = (3.00,\; 15.00,\; 0.30)\ \text{USD/MTok},
+\]
+\[
+  (p^{m_2}_{\text{in}},\, p^{m_2}_{\text{out}},\, p^{m_2}_{\text{cache}})
+  = (0.15,\; 0.60,\; 0.075)\ \text{USD/MTok}.
+\]
+
+\paragraph{Step 2 --- Cost of $m_1$.}
+The three token counts are scaled to millions and multiplied by their
+respective per-MTok prices, then summed.
+\[
+  \text{Cost}_{m_1}
+  = \frac{120{,}000}{10^6} \times 3.00
+  + \frac{30{,}000}{10^6} \times 15.00
+  + \frac{480{,}000}{10^6} \times 0.30
+\]
+\[
+  \phantom{\text{Cost}_{m_1}}
+  = 0.12 \times 3.00 + 0.03 \times 15.00 + 0.48 \times 0.30
+  = 0.3600 + 0.4500 + 0.1440
+  = \$0.9540.
+\]
+
+\paragraph{Step 3 --- Cost of $m_2$.}
+The same formula is applied to the summarisation model, whose prices are
+an order of magnitude lower.
+\[
+  \text{Cost}_{m_2}
+  = \frac{40{,}000}{10^6} \times 0.15
+  + \frac{10{,}000}{10^6} \times 0.60
+  + \frac{60{,}000}{10^6} \times 0.075
+\]
+\[
+  \phantom{\text{Cost}_{m_2}}
+  = 0.04 \times 0.15 + 0.01 \times 0.60 + 0.06 \times 0.075
+  = 0.0060 + 0.0060 + 0.0045
+  = \$0.0165.
+\]
+
+\paragraph{Step 4 --- Session total.}
+The per-model costs are summed over the two models used.
+\[
+  \text{Total} = \sum_m \text{Cost}_m
+               = 0.9540 + 0.0165
+               = \$0.9705.
+\]
+
+\paragraph{Step 5 --- Cache savings.}
+For each model, every cache-read token avoided paying the full input price,
+so the saving is the cache volume times the price gap.
+\[
+  \text{Savings}_{m_1}
+  = \frac{480{,}000}{10^6} \times \max(0,\; 3.00 - 0.30)
+  = 0.48 \times 2.70
+  = \$1.2960,
+\]
+\[
+  \text{Savings}_{m_2}
+  = \frac{60{,}000}{10^6} \times \max(0,\; 0.15 - 0.075)
+  = 0.06 \times 0.075
+  = \$0.0045,
+\]
+\[
+  \text{Savings} = 1.2960 + 0.0045 = \$1.3005.
+\]
+
+\paragraph{Step 6 --- Cache hit ratio $r_c$.}
+Finally we measure what fraction of all prompt tokens were served from
+cache rather than paid at the full input price.
+\[
+  r_c = \frac{\sum_m C_m}{\sum_m (I_m + C_m)}
+      = \frac{480{,}000 + 60{,}000}{(120{,}000 + 480{,}000) + (40{,}000 + 60{,}000)}
+      = \frac{540{,}000}{700{,}000}
+      = 0.771.
+\]
+
+Since $r_c = 0.771 \geq 0.5$, the prompt cache is doing heavy lifting.
+Without caching the session would have cost
+$0.9705 + 1.3005 = \$2.2710$, so cache reads cut spend by
+$1.3005 / 2.2710 \approx 57\,\%$.  The score fed to the efficiency
+component is $r_c = 0.771$.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked token-economics example.}
+\label{tab:token-economics-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$(I_{m_1}, O_{m_1}, C_{m_1})$ & $m_1$ token counts & $(120, 30, 480)$ kTok & raw input from telemetry \\
+$(I_{m_2}, O_{m_2}, C_{m_2})$ & $m_2$ token counts & $(40, 10, 60)$ kTok & raw input from telemetry \\
+$p^{m_1}$ & $m_1$ prices (in/out/cache) & $(3.00, 15.00, 0.30)$ \$/MTok & prefix-matched price sheet \\
+$p^{m_2}$ & $m_2$ prices (in/out/cache) & $(0.15, 0.60, 0.075)$ \$/MTok & longest prefix beats \texttt{gpt-4o} \\
+$\text{Cost}_{m_1}$ & primary-model cost & \$0.9540 & three price terms summed \\
+$\text{Cost}_{m_2}$ & summariser cost & \$0.0165 & same formula, cheaper sheet \\
+Total & session cost & \$0.9705 & sum over both models \\
+Savings & cache savings & \$1.3005 & cache volume $\times$ price gap \\
+$r_c$ & cache hit ratio & 0.771 (77.1\,\%) & $540\text{k} / 700\text{k}$; efficiency score \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Lexical Frustration Classifier}
 \label{sec:frustration}
