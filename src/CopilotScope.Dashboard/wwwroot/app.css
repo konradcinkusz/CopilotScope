@@ -23,6 +23,7 @@ html, body {
   color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
+  overflow-x: hidden;
 }
 
 .scope-root { min-height: 100vh; display: flex; flex-direction: column; }
@@ -509,6 +510,7 @@ html, body {
 }
 .doc-section a { color: var(--copper); }
 
+.table-wrap { overflow-x: auto; }
 .doc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
 .doc-table th {
   font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
@@ -516,5 +518,3 @@ html, body {
 }
 .doc-table td { padding: 7px 8px; border-bottom: 1px dotted var(--line); vertical-align: top; line-height: 1.5; }
 .doc-table td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--copper); }
-
-@media (max-width: 700px) { .doc-table { display: block; overflow-x: auto; } }
