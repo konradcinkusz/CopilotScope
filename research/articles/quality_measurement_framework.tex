@@ -665,6 +665,99 @@ Perfect, moderate LOC & 1.00 & 8.0 & 0.76 & high throughput \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:throughput-example}
+
+We trace one realistic refactoring session end-to-end.  The assistant
+proposed $a + j = 20$ edits over the session: $a = 14$ edits were accepted
+and $j = 6$ edits were rejected.  The accepted edits contributed
+$L = 220$ lines added across $T = 10$ turns, and the model emitted
+$O = 5{,}500$ output tokens in total.
+
+\paragraph{Step 1 --- Acceptance ratio $\alpha$.}
+First we measure what fraction of the assistant's proposals the user
+actually kept, which is the quality signal that dominates the score.
+\[
+  \alpha = \frac{a}{a+j}
+         = \frac{14}{14+6}
+         = \frac{14}{20}
+         = 0.70 \quad (\text{dimensionless, i.e.\ } 70\,\%).
+\]
+
+\paragraph{Step 2 --- Acceptance-adjusted LOC per turn $\ell_{\text{adj}}$.}
+Next we convert raw volume into \emph{useful} volume: the lines added are
+discounted by the acceptance ratio, then normalised per turn so long
+sessions are not favoured.
+\[
+  \ell_{\text{adj}} = \frac{L \cdot \alpha}{T}
+                    = \frac{220\,\text{LOC} \times 0.70}{10\,\text{turns}}
+                    = \frac{154\,\text{LOC}}{10\,\text{turns}}
+                    = 15.4\ \text{accepted LOC/turn}.
+\]
+
+\paragraph{Step 3 --- Token-normalised density $\ell_{\text{tok}}$ (optional).}
+The optional diagnostic relates lines produced to tokens spent; it does not
+enter the score but flags verbose models.
+\[
+  \ell_{\text{tok}} = \frac{L}{O/1000}
+                    = \frac{220\,\text{LOC}}{5{,}500/1000\,\text{kTok}}
+                    = \frac{220\,\text{LOC}}{5.5\,\text{kTok}}
+                    = 40\ \text{LOC/kTok}.
+\]
+
+\paragraph{Step 4 --- LOC saturation term.}
+The LOC component is capped so that sheer volume beyond 20 accepted
+LOC/turn earns no extra credit; here the session sits just below the cap.
+\[
+  \min\!\left(1,\;\frac{\ell_{\text{adj}}}{20}\right)
+  = \min\!\left(1,\;\frac{15.4}{20}\right)
+  = \min(1,\;0.77)
+  = 0.77.
+\]
+
+\paragraph{Step 5 --- Weighted combination.}
+We blend the two components with the fixed weights: 0.6 on acceptance
+(quality) and 0.4 on saturated LOC rate (volume).
+\[
+  0.6\alpha + 0.4 \times 0.77
+  = 0.6 \times 0.70 + 0.4 \times 0.77
+  = 0.420 + 0.308
+  = 0.728.
+\]
+
+\paragraph{Step 6 --- Clamp.}
+Finally the result is clamped to $[0,1]$; since $0.728$ already lies inside
+the interval, the clamp is the identity here.
+\[
+  \text{Score} = \clamp{0.728}{0}{1} = 0.728.
+\]
+
+The session scores $0.728$ --- between the ``Good acceptance, low LOC''
+and ``Perfect, moderate LOC'' scenarios above: a solid, near-saturation
+volume of accepted code, held back mainly by the 30\,\% rejection rate.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked throughput example.}
+\label{tab:throughput-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$a$ & edits accepted & 14 edits & raw input from telemetry \\
+$j$ & edits rejected & 6 edits & raw input from telemetry \\
+$\alpha$ & acceptance ratio & 0.70 (70\,\%) & $14/20$; quality signal \\
+$L$ & lines added & 220 LOC & raw input from telemetry \\
+$T$ & number of turns & 10 turns & normalises volume per turn \\
+$\ell_{\text{adj}}$ & accepted LOC per turn & 15.4 LOC/turn & $220 \times 0.70 / 10$ \\
+$O$ & output tokens & 5{,}500 tokens & raw input from telemetry \\
+$\ell_{\text{tok}}$ & LOC per kilotoken & 40 LOC/kTok & $220/5.5$; diagnostic only \\
+--- & saturation term & 0.77 & $\min(1, 15.4/20)$; below cap \\
+Score & throughput score & 0.728 & $0.6 \times 0.70 + 0.4 \times 0.77$, clamped \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Latency-Utility Model}
 \label{sec:latency-utility}
