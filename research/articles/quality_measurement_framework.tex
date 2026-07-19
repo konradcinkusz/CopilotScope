@@ -502,6 +502,117 @@ Total possible & $1.55$ & but $\tau_i = \max(0, \cdot)$ floors at 0 \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:tfra-example}
+
+We score one realistic 5-turn session whose per-turn trace signals are
+given below.
+
+\begin{table}[h!]
+\centering
+\caption{Per-turn trace signals for the worked TFRA session.}
+\label{tab:tfra-inputs}
+\begin{tabular}{@{}crrrrrr@{}}
+\toprule
+Turn $i$ & $\text{TTFT}_i$ & $e^{\text{LLM}}_i$ & $e^{\text{tool}}_i$
+  & $c^{\text{LLM}}_i$ & $c^{\text{tool}}_i$
+  & $c^{\text{tool}}_i / \max(1, c^{\text{LLM}}_i)$ \\
+\midrule
+1 & $900\,\text{ms}$   & 0 & 0 & 1 & 2 & 2 \\
+2 & $1{,}000\,\text{ms}$ & 1 & 0 & 1 & 1 & 1 \\
+3 & $1{,}200\,\text{ms}$ & 0 & 1 & 2 & 4 & 2 \\
+4 & $1{,}500\,\text{ms}$ & 0 & 0 & 1 & 2 & 2 \\
+5 & $3{,}800\,\text{ms}$ & 0 & 2 & 2 & 8 & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Step 1 --- Session medians.}
+Both penalty rules are self-referential, so we first fix the session's
+median TTFT and median tool ratio ($n = 5$, odd, so the middle value).
+\[
+  m = \text{Median}(900, 1000, 1200, 1500, 3800) = 1{,}200\,\text{ms},
+\]
+\[
+  m_{\text{tr}} = \text{Median}(2, 1, 2, 2, 4) = 2.
+\]
+
+\paragraph{Step 2 --- Penalty thresholds.}
+The medians fix the concrete cutoffs every turn is judged against.
+\[
+  1.5\,m = 1{,}800\,\text{ms}, \qquad
+  3\,m = 3{,}600\,\text{ms}, \qquad
+  2\,m_{\text{tr}} = 4.
+\]
+
+\paragraph{Step 3 --- Worst turn written in full ($\tau_5$).}
+Turn 5 trips all three non-LLM penalties: two tool errors cost
+$0.15 \times \min(2,3) = 0.30$; its TTFT of $3{,}800\,\text{ms} \geq
+3{,}600\,\text{ms}$ costs $\Delta^{\text{lat}}_5 = 0.30$; and the repair
+test fires because $e^{\text{tool}}_5 = 2 > 0$, the tool ratio
+$8/2 = 4 \geq 2\,m_{\text{tr}} = 4$, and $c^{\text{tool}}_5 = 8 \geq 3$,
+costing $\Delta^{\text{rep}}_5 = 0.10$.
+\[
+  \tau_5 = \max\!\left(0,\;
+    1 - 0.35 \times \min(0, 2) - 0.15 \times \min(2, 3) - 0.30 - 0.10
+  \right)
+\]
+\[
+  \phantom{\tau_5}
+  = \max(0,\; 1 - 0 - 0.30 - 0.30 - 0.10)
+  = \max(0,\; 0.30)
+  = 0.30.
+\]
+
+\paragraph{Step 4 --- Remaining turns.}
+The other four turns each trip at most one penalty: all TTFTs are below
+$1{,}800\,\text{ms}$, and turn~3 fails the repair test since its tool
+ratio $2 < 4$.
+\[
+  \tau_1 = 1.00, \qquad
+  \tau_2 = 1 - 0.35 \times \min(1,2) = 0.65, \qquad
+  \tau_3 = 1 - 0.15 \times \min(1,3) = 0.85, \qquad
+  \tau_4 = 1.00.
+\]
+
+\paragraph{Step 5 --- Session mean $\bar{\tau}$.}
+The five turn scores are averaged; this mean is what feeds the Friction
+component of \S\ref{sec:quality-engine}.
+\[
+  \bar{\tau} = \frac{1.00 + 0.65 + 0.85 + 1.00 + 0.30}{5}
+             = \frac{3.80}{5}
+             = 0.76.
+\]
+
+\paragraph{Step 6 --- Best/worst turn selection.}
+Turns 1 and 4 tie at $\tau = 1.00$, so the tie-break picks the smaller
+TTFT; the worst turn is unambiguous.
+\[
+  i^* = 1 \quad (900\,\text{ms} < 1{,}500\,\text{ms}),
+  \qquad
+  i_- = 5 \quad (\tau_5 = 0.30).
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked TFRA example.}
+\label{tab:tfra-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$m$ & session median TTFT & 1{,}200 ms & middle of 5 sorted TTFTs \\
+$m_{\text{tr}}$ & median tool ratio & 2 & middle of 5 tool ratios \\
+$\Delta^{\text{lat}}_5$ & latency penalty, turn 5 & 0.30 & $3{,}800 \geq 3m = 3{,}600$ ms \\
+$\Delta^{\text{rep}}_5$ & repair penalty, turn 5 & 0.10 & errors + ratio $4 \geq 4$ + calls $\geq 3$ \\
+$\tau_5$ & worst turn score & 0.30 & three penalties stack \\
+$\tau_1, \ldots, \tau_4$ & other turn scores & 1.00, 0.65, 0.85, 1.00 & at most one penalty each \\
+$\bar{\tau}$ & session mean & 0.76 & $3.80 / 5$; feeds Friction \\
+$i^*$, $i_-$ & best/worst turns & 1, 5 & tie at 1.00 broken by TTFT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Edit Survival Analysis}
 \label{sec:edit-survival}
