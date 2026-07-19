@@ -250,6 +250,150 @@ $< 40$    & critical & \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:quality-engine-example}
+
+We score one realistic session end-to-end.  Five of the six components are
+informative; the user cast no explicit thumbs votes, so Feedback has
+$n_F = 0$ and drops out of $\calI$.  The measured inputs are:
+$e_{\text{LLM}} = 1$ error over $c_{\text{LLM}} = 12$ chat calls and
+$e_{\text{tool}} = 2$ errors over $c_{\text{tool}} = 30$ tool calls;
+$a = 14$ accepted and $j = 6$ rejected edits with mean survival
+$\bar{s} = 0.6936$; mean TFRA turn score $\bar{\tau} = 0.87$ over
+$N = 10$ turns; median TTFT $p_{50} = 1{,}950\,\text{ms}$ over 6 latency
+samples; and efficiency sub-signals $r_c = 0.7714$ with
+$\bar{t} = 5$ turns per invocation over 2 agent invocations.
+
+\paragraph{Step 1 --- Reliability $v_R$.}
+We form the weighted error rate, with chat errors counted twice, then
+apply the quadratic penalty.
+\[
+  \hat{e} = \frac{2 \times 1 + 2}{\max(1,\; 2 \times 12 + 30)}
+          = \frac{4}{54}
+          = 0.0741,
+\]
+\[
+  v_R = \clamp{(1 - 0.0741)^2}{0}{1}
+      = 0.9259^2
+      = 0.8573.
+\]
+
+\paragraph{Step 2 --- Acceptance $v_A$.}
+The acceptance ratio is blended with the survival mean, 60/40.
+\[
+  \alpha = \frac{14}{14+6} = 0.70,
+  \qquad
+  v_A = \clamp{0.6 \times 0.70 + 0.4 \times 0.6936}{0}{1}
+      = 0.4200 + 0.2774
+      = 0.6974.
+\]
+
+\paragraph{Step 3 --- Friction $v_\Phi$ and Latency $v_\Lambda$.}
+Friction passes the TFRA mean through unchanged; latency pushes the median
+TTFT through the log-linear curve of \S\ref{sec:latency-utility}.
+\[
+  v_\Phi = \bar{\tau} = 0.8700,
+\]
+\[
+  v_\Lambda = L(1950)
+            = 1 - \frac{\ln(1950/300)}{\ln(10000/300)}
+            = 1 - \frac{1.8718}{3.5066}
+            = 1 - 0.5338
+            = 0.4662.
+\]
+
+\paragraph{Step 4 --- Efficiency $v_E$.}
+Both sub-signals are available: the cache ratio, and the
+turns-per-invocation score, which is 1 because $\bar{t} = 5 \leq 8$.
+\[
+  v_E = \frac{r_c + e_{\mathrm{tpi}}}{2}
+      = \frac{0.7714 + 1}{2}
+      = 0.8857.
+\]
+
+\paragraph{Step 5 --- Coverage $C$.}
+Feedback is uninformative, so only the five observed base weights sum
+into the coverage.
+\[
+  C = 0.25 + 0.20 + 0.20 + 0.15 + 0.10 = 0.90.
+\]
+
+\paragraph{Step 6 --- Composite score $Q$.}
+The five component values are weighted, summed, and renormalised by the
+coverage so the missing Feedback weight does not drag the score down.
+\[
+  \sum_{i \in \calI} w_i v_i
+  = 0.25 \times 0.8573
+  + 0.20 \times 0.6974
+  + 0.20 \times 0.8700
+  + 0.15 \times 0.4662
+  + 0.10 \times 0.8857
+\]
+\[
+  \phantom{\sum_{i \in \calI} w_i v_i}
+  = 0.2143 + 0.1395 + 0.1740 + 0.0699 + 0.0886
+  = 0.6863,
+\]
+\[
+  Q = \frac{100}{C} \sum_{i \in \calI} w_i v_i
+    = \frac{100}{0.90} \times 0.6863
+    = 76.26 \quad (\text{grade: good}).
+\]
+
+\paragraph{Step 7 --- Confidence.}
+Each component's sample ramp saturates at five samples; only Efficiency,
+with 2 invocations, is still ramping.
+\[
+  \rho_R = \rho_A = \rho_\Phi = \rho_\Lambda = 1,
+  \qquad
+  \rho_E = \min(1,\; 2/5) = 0.40,
+\]
+\[
+  \rho = \frac{0.25 + 0.20 + 0.20 + 0.15 + 0.10 \times 0.40}{0.90}
+       = \frac{0.8400}{0.90}
+       = 0.9333,
+\]
+\[
+  \text{Confidence} = C \cdot \rho = 0.90 \times 0.9333 = 0.84.
+\]
+
+\paragraph{Step 8 --- Relative score.}
+Against a history window of $H = 20$ recent sessions with mean
+$\mu = 72.4$ and standard deviation $\sigma = 6.8$, of which 14 scored at
+or below $Q$:
+\[
+  z = \frac{76.26 - 72.4}{6.8} = \frac{3.86}{6.8} = 0.57,
+  \qquad
+  \text{PercentileRank} = \frac{14}{20} = 0.70
+  \quad (\text{at baseline}).
+\]
+
+The session reads as ``good (76.26) at confidence 0.84, at baseline for
+this user'': a well-evidenced, slightly above-average session whose main
+drag is latency ($v_\Lambda = 0.4662$).
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked composite-score example.}
+\label{tab:quality-engine-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$\hat{e}$ & weighted error rate & 0.0741 (7.4\,\%) & $4/54$; chat errors count double \\
+$v_R$ & reliability value & 0.8573 & quadratic penalty on $1-\hat{e}$ \\
+$v_A$ & acceptance value & 0.6974 & $0.6\alpha + 0.4\bar{s}$ \\
+$v_\Phi$ & friction value & 0.8700 & TFRA mean passed through \\
+$v_\Lambda$ & latency value & 0.4662 & $L(p_{50})$ at 1{,}950 ms \\
+$v_E$ & efficiency value & 0.8857 & mean of $r_c$ and $e_{\mathrm{tpi}}$ \\
+$C$ & coverage & 0.90 & Feedback ($w=0.10$) uninformative \\
+$Q$ & composite score & 76.26 points & weighted sum renormalised by $C$ \\
+Confidence & data backing & 0.84 & Efficiency ramp still at 0.40 \\
+$z$, PercentileRank & relative position & 0.57, 0.70 & at baseline in $H=20$ window \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Numerical Example}
 
 \begin{table}[h!]
