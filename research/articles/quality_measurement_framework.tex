@@ -1444,6 +1444,112 @@ $< 0.25$ & No meaningful frustration signals \\
 \end{tabular}
 \end{table}
 
+\subsection{Worked Example}
+\label{sec:frustration-example}
+
+We classify one realistic 4-message exchange:
+\begin{itemize}
+  \item $x_1$: \textit{``Add pagination to the results table''}
+  \item $x_2$: \textit{``add pagination to the results table component''}
+  \item $x_3$: \textit{``this is STILL NOT WORKING??''}
+  \item $x_4$: \textit{``no, revert that''}
+\end{itemize}
+
+\paragraph{Step 1 --- Baseline message $f_1$.}
+The opening request carries no lexicon markers, has no previous message
+to rephrase, and is typographically calm, so every term is zero.
+\[
+  f_1 = \min(1,\; 0) = 0.00.
+\]
+
+\paragraph{Step 2 --- Rephrasing signal $f_2$.}
+Message $x_2$ nearly repeats $x_1$, so only the Jaccard indicator fires.
+Tokenising with length $> 2$ gives
+$\calW_{x_1} = \{\text{add}, \text{pagination}, \text{the},
+\text{results}, \text{table}\}$ and
+$\calW_{x_2} = \calW_{x_1} \cup \{\text{component}\}$:
+\[
+  J(x_2, x_1) = \frac{|\calW_{x_2} \cap \calW_{x_1}|}{|\calW_{x_2} \cup \calW_{x_1}|}
+              = \frac{5}{6}
+              = 0.833 \;\geq\; 0.6,
+\]
+\[
+  f_2 = \min(1,\; 0.30 \times 1) = 0.30.
+\]
+
+\paragraph{Step 3 --- Peak message $f_3$.}
+Message $x_3$ trips four signals: one strong marker
+(\textit{``not working''}, $h^s_3 = 1$), one mild marker
+(\textit{``still''}, $h^m_3 = 1$), sustained CAPS (15 of 21 letters
+uppercase, $71\,\% > 60\,\%$ over $\geq 12$ letters), and a
+\texttt{??}~punctuation burst.
+\[
+  f_3 = \min\!\left(1,\;
+    0.45 \times \min(1,2)
+    + 0.15 \times \min(1,3)
+    + 0.15
+    + 0.10
+  \right)
+\]
+\[
+  \phantom{f_3}
+  = \min(1,\; 0.45 + 0.15 + 0.15 + 0.10)
+  = \min(1,\; 0.85)
+  = 0.85.
+\]
+
+\paragraph{Step 4 --- Short corrective reply $f_4$.}
+Message $x_4$ contains two mild markers (\textit{``no,''} and
+\textit{``revert''}, $h^m_4 = 2$) and is a short corrective: 15
+characters $< 20$, starting with ``no''.
+\[
+  f_4 = \min\!\left(1,\; 0.15 \times \min(2,3) + 0.20\right)
+      = \min(1,\; 0.30 + 0.20)
+      = 0.50.
+\]
+
+\paragraph{Step 5 --- Session mean $\bar{f}$.}
+The four per-message scores are averaged.
+\[
+  \bar{f} = \frac{0.00 + 0.30 + 0.85 + 0.50}{4}
+          = \frac{1.65}{4}
+          = 0.4125.
+\]
+
+\paragraph{Step 6 --- Session frustration index $F$.}
+The mean alone would dilute the angry message, so the index is pulled
+halfway toward the peak $\max_i f_i = 0.85$.
+\[
+  F = \bar{f} + 0.5\left(\max_i f_i - \bar{f}\right)
+    = 0.4125 + 0.5 \times (0.85 - 0.4125)
+    = 0.4125 + 0.2188
+    = 0.631.
+\]
+
+Since $F = 0.631 \geq 0.5$, the session reports \emph{clear frustration
+signals}; messages $x_3$ and $x_4$ are flagged with their reasons for
+human review, per the report-only design philosophy.
+
+\begin{table}[h!]
+\centering
+\caption{Summary of the worked frustration example.}
+\label{tab:frustration-worked}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value (with unit) & What happens at this step \\
+\midrule
+$f_1$ & baseline message score & 0.00 & no signals fire \\
+$J(x_2, x_1)$ & rephrasing similarity & 0.833 & $5/6$ shared tokens; $\geq 0.6$ \\
+$f_2$ & rephrased message score & 0.30 & Jaccard indicator only \\
+$f_3$ & peak message score & 0.85 & strong + mild + CAPS + punct \\
+$f_4$ & corrective reply score & 0.50 & two mild markers + short ``no'' \\
+$\bar{f}$ & session mean & 0.4125 & $1.65 / 4$ \\
+$\max_i f_i$ & session peak & 0.85 & message $x_3$ \\
+$F$ & frustration index & 0.631 & mean pulled halfway to peak \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 % ------------------------------------------------------------
 \section{Order-Statistic Percentile}
 \label{sec:percentile}
