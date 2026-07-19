@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CopilotScope — Observability for GitHub Copilot</title>
+<meta name="description" content="OpenTelemetry-powered observability for GitHub Copilot sessions. Real-time quality scores, turn-level friction analysis, and token economics — from one OTLP endpoint.">
+<style>
+/* ── tokens ─────────────────────────────────────────────────────────────── */
+:root {
+  --bg:      #07111d;
+  --surf:    #0d1a2f;
+  --surf2:   #132035;
+  --border:  #1e3050;
+  --text:    #e6edf3;
+  --dim:     #8b9eb5;
+  --amber:   #f59e0b;
+  --amber2:  #d97706;
+  --blue:    #3b82f6;
+  --green:   #3fb950;
+  --red:     #f85149;
+  --teal:    #22d3ee;
+  --mono: 'Cascadia Code','JetBrains Mono',Consolas,'Courier New',monospace;
+  --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light) { :root {
+  --bg:#f0f6fc; --surf:#ffffff; --surf2:#f6f8fa; --border:#d0d7de;
+  --text:#1f2328; --dim:#636c76;
+  --amber:#b45309; --amber2:#92400e; --blue:#0969da; --green:#1a7f37;
+  --red:#cf222e; --teal:#0891b2;
+}}
+:root[data-theme="dark"] {
+  --bg:#07111d; --surf:#0d1a2f; --surf2:#132035; --border:#1e3050;
+  --text:#e6edf3; --dim:#8b9eb5;
+  --amber:#f59e0b; --amber2:#d97706; --blue:#3b82f6; --green:#3fb950;
+  --red:#f85149; --teal:#22d3ee;
+}
+:root[data-theme="light"] {
+  --bg:#f0f6fc; --surf:#ffffff; --surf2:#f6f8fa; --border:#d0d7de;
+  --text:#1f2328; --dim:#636c76;
+  --amber:#b45309; --amber2:#92400e; --blue:#0969da; --green:#1a7f37;
+  --red:#cf222e; --teal:#0891b2;
+}
+
+/* ── reset ──────────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--amber);text-decoration:none}
+a:hover{text-decoration:underline}
+img,svg{display:block}
+code{font-family:var(--mono)}
+
+/* ── nav ────────────────────────────────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:100;
+  display:flex;align-items:center;gap:16px;
+  padding:0 24px;height:56px;
+  background:color-mix(in srgb,var(--bg) 85%,transparent);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.nav-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;color:var(--text);text-decoration:none}
+.nav-logo svg{width:28px;height:28px;flex-shrink:0}
+.nav-logo .brand-accent{color:var(--amber)}
+.nav-links{display:flex;align-items:center;gap:4px;margin-left:auto}
+.nav-links a{
+  padding:6px 12px;border-radius:6px;font-size:13px;color:var(--dim);
+  transition:color .15s,background .15s;
+}
+.nav-links a:hover{color:var(--text);background:var(--surf2);text-decoration:none}
+.nav-cta{
+  background:var(--amber);color:#07111d!important;font-weight:600;
+  padding:6px 14px;border-radius:6px;font-size:13px;
+  transition:opacity .15s;
+}
+.nav-cta:hover{opacity:.88;text-decoration:none!important}
+
+/* ── hero ───────────────────────────────────────────────────────────────── */
+.hero{
+  position:relative;
+  padding:88px 24px 72px;
+  text-align:center;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse 70% 60% at 50% -10%,color-mix(in srgb,var(--amber) 12%,transparent) 0%,transparent 70%);
+  pointer-events:none;
+}
+.hero-logo{
+  width:88px;height:88px;
+  margin:0 auto 24px;
+  filter:drop-shadow(0 0 28px color-mix(in srgb,var(--amber) 40%,transparent));
+}
+.hero h1{
+  font-size:clamp(2.2rem,6vw,3.4rem);
+  font-weight:800;
+  letter-spacing:-1.5px;
+  line-height:1.1;
+  margin-bottom:18px;
+}
+.hero h1 .brand-accent{color:var(--amber)}
+.hero-sub{
+  font-size:clamp(1rem,2.5vw,1.2rem);
+  color:var(--dim);
+  max-width:580px;
+  margin:0 auto 32px;
+  line-height:1.6;
+}
+.hero-sub strong{color:var(--text)}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:36px}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:11px 22px;border-radius:8px;font-size:14px;font-weight:600;
+  transition:opacity .15s,transform .1s;cursor:pointer;border:none;text-decoration:none;
+}
+.btn:hover{opacity:.88;transform:translateY(-1px);text-decoration:none}
+.btn-primary{background:var(--amber);color:#07111d}
+.btn-secondary{background:var(--surf);color:var(--text);border:1px solid var(--border)}
+.badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;opacity:.75}
+.badges img{height:20px}
+
+/* ── section layout ─────────────────────────────────────────────────────── */
+.section{padding:64px 24px}
+.section-inner{max-width:1080px;margin:0 auto}
+.section-label{
+  font-family:var(--mono);font-size:11px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--amber);
+  margin-bottom:10px;
+}
+.section h2{
+  font-size:clamp(1.5rem,3.5vw,2rem);
+  font-weight:700;letter-spacing:-0.5px;
+  margin-bottom:16px;
+  text-wrap:balance;
+}
+.section p{color:var(--dim);max-width:620px;line-height:1.7}
+hr.divider{border:none;border-top:1px solid var(--border);margin:0}
+
+/* ── what grid ──────────────────────────────────────────────────────────── */
+.what-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+@media(max-width:680px){.what-grid{grid-template-columns:1fr}}
+.what-text p{color:var(--dim);line-height:1.75;margin-bottom:14px}
+.what-text p:last-child{margin-bottom:0}
+.what-text strong{color:var(--text)}
+
+/* ── flow diagram ───────────────────────────────────────────────────────── */
+.flow{display:flex;flex-direction:column;gap:0;user-select:none}
+.flow-node{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;
+  background:var(--surf);border:1px solid var(--border);border-radius:8px;
+}
+.flow-node-icon{font-size:18px;width:32px;text-align:center;flex-shrink:0}
+.flow-node-title{font-size:13px;font-weight:600;color:var(--text)}
+.flow-node-sub{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:1px}
+.flow-node.accent{border-color:var(--amber);box-shadow:0 0 0 1px color-mix(in srgb,var(--amber) 20%,transparent)}
+.flow-connector{display:flex;padding-left:22px;height:28px;align-items:center;gap:10px}
+.flow-connector-line{width:2px;height:100%;background:var(--border);position:relative;flex-shrink:0}
+.flow-connector-line::after{
+  content:'';position:absolute;bottom:-4px;left:-3px;
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:6px solid var(--border);
+}
+.flow-connector-label{font-family:var(--mono);font-size:10px;color:var(--dim)}
+.flow-tag{
+  margin-left:auto;font-family:var(--mono);font-size:10px;
+  background:color-mix(in srgb,var(--amber) 15%,transparent);
+  color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent);
+  padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0;
+}
+
+/* ── features grid ──────────────────────────────────────────────────────── */
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+  gap:16px;margin-top:32px;
+}
+.feat{
+  background:var(--surf);border:1px solid var(--border);border-radius:10px;
+  padding:20px;transition:border-color .2s,transform .2s;
+}
+.feat:hover{border-color:color-mix(in srgb,var(--amber) 50%,var(--border));transform:translateY(-2px)}
+.feat-icon{font-size:22px;margin-bottom:12px}
+.feat h3{font-size:14px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.feat p{font-size:13px;color:var(--dim);line-height:1.6}
+
+/* ── quality score demo ─────────────────────────────────────────────────── */
+.score-card{
+  background:var(--surf);border:1px solid var(--border);border-radius:12px;
+  padding:28px;margin-top:32px;
+}
+.score-layout{display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:start}
+@media(max-width:600px){.score-layout{grid-template-columns:1fr}}
+.score-badge-wrap{text-align:center}
+.score-badge{
+  display:inline-flex;flex-direction:column;align-items:center;
+  padding:20px 28px;
+  background:var(--surf2);border:1px solid var(--border);border-radius:10px;
+  min-width:110px;
+}
+.score-num{
+  font-size:3.2rem;font-weight:800;line-height:1;
+  color:var(--amber);letter-spacing:-2px;
+  font-variant-numeric:tabular-nums;
+}
+.score-grade{
+  font-family:var(--mono);font-size:11px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--green);margin-top:6px;
+}
+.score-conf{font-size:11px;color:var(--dim);margin-top:4px}
+.score-label{font-size:12px;color:var(--dim);margin-top:10px}
+.score-components{display:flex;flex-direction:column;gap:11px}
+.sc-row{display:flex;align-items:center;gap:10px}
+.sc-name{font-size:12px;color:var(--dim);width:100px;flex-shrink:0}
+.sc-bar-bg{flex:1;background:var(--surf2);border-radius:4px;height:6px;overflow:hidden}
+.sc-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--amber2),var(--amber))}
+.sc-pct{font-family:var(--mono);font-size:11px;color:var(--amber);width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.sc-weight{font-family:var(--mono);font-size:10px;color:var(--dim);width:36px;text-align:right;flex-shrink:0}
+.score-thresholds{
+  display:flex;gap:20px;flex-wrap:wrap;
+  margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
+}
+.st{font-size:12px;color:var(--dim)}
+.st strong{color:var(--text)}
+
+/* ── table ──────────────────────────────────────────────────────────────── */
+.table-wrap{overflow-x:auto;margin-top:24px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{
+  font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--dim);text-align:left;padding:10px 16px;
+  border-bottom:2px solid var(--border);white-space:nowrap;font-weight:600;
+}
+td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surf2)}
+td code{font-size:12px;background:var(--surf2);padding:2px 6px;border-radius:4px;color:var(--amber);white-space:nowrap}
+.pill{display:inline-block;font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:12px;white-space:nowrap}
+.pill-local{background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 35%,transparent)}
+.pill-cloud{background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 35%,transparent)}
+.pill-planned{background:var(--surf2);color:var(--dim);border:1px solid var(--border)}
+
+/* ── quickstart ─────────────────────────────────────────────────────────── */
+.qs-tabs{display:flex;gap:0;margin-bottom:0;border-bottom:2px solid var(--border)}
+.qs-tab{
+  padding:9px 18px;font-size:13px;font-weight:500;color:var(--dim);
+  border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px;
+  transition:color .15s;background:none;border-top:none;border-left:none;border-right:none;
+  font-family:var(--sans);
+}
+.qs-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.qs-tab:hover:not(.active){color:var(--text)}
+.qs-panel{display:none}
+.qs-panel.active{display:block}
+.code-block{
+  background:var(--surf);border:1px solid var(--border);border-top:none;
+  border-radius:0 0 10px 10px;
+  padding:20px;font-family:var(--mono);font-size:12.5px;line-height:1.8;
+  overflow-x:auto;color:var(--text);
+}
+.qs-panel:first-of-type .code-block{border-top:1px solid var(--border);border-radius:0 10px 10px 10px}
+.code-block .c{color:var(--dim)}
+.code-block .cmd{color:var(--amber)}
+.code-block .str{color:var(--green)}
+.code-block .prop{color:var(--teal)}
+.qs-note{font-size:13px;color:var(--dim);margin-top:12px;line-height:1.6}
+.qs-note strong{color:var(--text)}
+
+/* ── footer ─────────────────────────────────────────────────────────────── */
+footer{
+  padding:40px 24px;
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
+}
+.footer-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:var(--text)}
+.footer-brand svg{width:22px;height:22px}
+.footer-links{display:flex;gap:20px;flex-wrap:wrap}
+.footer-links a{font-size:13px;color:var(--dim)}
+.footer-links a:hover{color:var(--text)}
+.footer-copy{font-size:12px;color:var(--dim);width:100%}
+
+@media(max-width:500px){
+  nav{padding:0 16px}
+  .nav-links a:not(.nav-cta){display:none}
+  .section{padding:48px 16px}
+}
+@media (prefers-reduced-motion: reduce){
+  .btn,.feat{transition:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ── nav ──────────────────────────────────────────────────────────────── -->
+<nav>
+  <a href="#" class="nav-logo">
+    <!-- CopilotScope logo: oscilloscope display with ECG waveform -->
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="scbgn" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f1923"/><stop offset="100%" stop-color="#1a2d3f"/>
+        </linearGradient>
+        <linearGradient id="scaccn" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="50" fill="url(#scbgn)"/>
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.55"/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke="#f59e0b" stroke-width="0.6" opacity="0.25"/>
+      <line x1="8" y1="50" x2="92" y2="50" stroke="#f59e0b" stroke-width="0.6" opacity="0.3"/>
+      <line x1="50" y1="8" x2="50" y2="92" stroke="#f59e0b" stroke-width="0.6" opacity="0.3"/>
+      <!-- cardinal ticks -->
+      <line x1="50" y1="8"  x2="50" y2="12.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="92" y1="50" x2="87.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="50" y1="92" x2="50" y2="87.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="8"  y1="50" x2="12.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <!-- ECG waveform: flat → Q dip → R spike → S dip → flat -->
+      <polyline points="8,50 36,50 38,57 42,22 46,62 50,50 92,50"
+        fill="none" stroke="url(#scaccn)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="2" fill="#f59e0b" opacity="0.65"/>
+    </svg>
+    Copilot<span class="brand-accent">Scope</span>
+  </a>
+  <div class="nav-links">
+    <a href="TUTORIAL.html">Docs</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases">Releases</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf">Research</a>
+    <a href="https://github.com/konradcinkusz/copilotscope" class="btn-secondary btn" style="padding:5px 12px;font-size:13px">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <a href="#quickstart" class="btn btn-primary nav-cta" style="padding:5px 14px;font-size:13px">Get Started</a>
+  </div>
+</nav>
+
+<!-- ── hero ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <!-- Hero logo (larger version with unique gradient IDs) -->
+  <svg class="hero-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="scbgh" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#0f1923"/><stop offset="100%" stop-color="#1a2d3f"/>
+      </linearGradient>
+      <linearGradient id="scacch" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/>
+      </linearGradient>
+    </defs>
+    <circle cx="50" cy="50" r="50" fill="url(#scbgh)"/>
+    <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.55"/>
+    <circle cx="50" cy="50" r="27" fill="none" stroke="#f59e0b" stroke-width="0.7" opacity="0.28"/>
+    <line x1="8" y1="50" x2="92" y2="50" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+    <line x1="50" y1="8" x2="50" y2="92" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+    <line x1="50" y1="8"  x2="50" y2="12.5" stroke="#f59e0b" stroke-width="2.2" opacity="0.75"/>
+    <line x1="92" y1="50" x2="87.5" y2="50" stroke="#f59e0b" stroke-width="2.2" opacity="0.75"/>
+    <line x1="50" y1="92" x2="50" y2="87.5" stroke="#f59e0b" stroke-width="2.2" opacity="0.75"/>
+    <line x1="8"  y1="50" x2="12.5" y2="50" stroke="#f59e0b" stroke-width="2.2" opacity="0.75"/>
+    <polyline points="8,50 36,50 38,57 42,22 46,62 50,50 92,50"
+      fill="none" stroke="url(#scacch)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="50" cy="50" r="2.2" fill="#f59e0b" opacity="0.65"/>
+  </svg>
+
+  <h1>Copilot<span class="brand-accent">Scope</span></h1>
+  <p class="hero-sub">
+    <strong>Observability for GitHub Copilot chat sessions.</strong>
+    Real-time quality scores, turn-level friction analysis, and token
+    economics — powered by OpenTelemetry, zero external services required.
+  </p>
+  <div class="hero-actions">
+    <a href="#quickstart" class="btn btn-primary">→ Get Started</a>
+    <a href="https://github.com/konradcinkusz/copilotscope" class="btn btn-secondary">View on GitHub</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf" class="btn btn-secondary">Research Paper</a>
+  </div>
+  <div class="badges">
+    <img src="https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml/badge.svg" alt="build">
+    <img src="https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=f59e0b" alt="Release">
+    <img src="https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1" alt="Downloads">
+    <img src="https://img.shields.io/badge/License-MIT-e0a458.svg" alt="MIT">
+    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8">
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── what is it ───────────────────────────────────────────────────────── -->
+<section class="section" id="what">
+  <div class="section-inner">
+    <div class="what-grid">
+      <div class="what-text">
+        <p class="section-label">What it is</p>
+        <h2>Measure every session.<br>Score it automatically.</h2>
+        <p>CopilotScope captures GitHub Copilot chat sessions as OpenTelemetry spans and computes a composite quality score (0–100) in real time. No extra SDK, no data leaving your machine — just one OTLP endpoint pointed at the collector.</p>
+        <p>The six-component engine weighs reliability, acceptance, friction, latency, feedback, and efficiency. Only components with actual data enter the composite — no sessions are pinned near a neutral prior when telemetry is sparse.</p>
+        <p>Sibling project of <a href="https://github.com/konradcinkusz/agenthelm" style="color:var(--teal)">AgentHelm</a>: <strong>Scope observes</strong> (what was that session worth?), <strong>Helm steers</strong> (run the session, approve the tools, keep the record).</p>
+      </div>
+      <div>
+        <div class="flow">
+          <div class="flow-node">
+            <div class="flow-node-icon">💻</div>
+            <div>
+              <div class="flow-node-title">VS Code · Copilot CLI · Claude Code</div>
+              <div class="flow-node-sub">any OTLP-emitting Copilot client</div>
+            </div>
+          </div>
+          <div class="flow-connector">
+            <div class="flow-connector-line"></div>
+            <div class="flow-connector-label">OTLP/HTTP :4318</div>
+          </div>
+          <div class="flow-node accent">
+            <div class="flow-node-icon">📡</div>
+            <div>
+              <div class="flow-node-title">CopilotScope.Collector</div>
+              <div class="flow-node-sub">ingest · quality engine · REST API</div>
+            </div>
+            <span class="flow-tag">core</span>
+          </div>
+          <div class="flow-connector">
+            <div class="flow-connector-line"></div>
+            <div class="flow-connector-label">write-behind · 1 s</div>
+          </div>
+          <div class="flow-node">
+            <div class="flow-node-icon">🗄️</div>
+            <div>
+              <div class="flow-node-title">Postgres</div>
+              <div class="flow-node-sub">session snapshots · jsonb · named volume</div>
+            </div>
+          </div>
+          <div class="flow-connector">
+            <div class="flow-connector-line"></div>
+            <div class="flow-connector-label">REST API · poll 2 s</div>
+          </div>
+          <div class="flow-node">
+            <div class="flow-node-icon">📊</div>
+            <div>
+              <div class="flow-node-title">CopilotScope.Dashboard</div>
+              <div class="flow-node-sub">Blazor Server · VU-meter · turn analysis</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── features ─────────────────────────────────────────────────────────── -->
+<section class="section" id="features">
+  <div class="section-inner">
+    <p class="section-label">What we measure</p>
+    <h2>Six lenses on every session</h2>
+    <div class="features-grid">
+      <div class="feat">
+        <div class="feat-icon">📊</div>
+        <h3>Composite score 0–100</h3>
+        <p>Six weighted components: reliability 0.25, acceptance 0.20, friction 0.20, latency 0.15, feedback 0.10, efficiency 0.10. Weights renormalize to data that actually arrived — no phantom penalty for missing telemetry.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🔬</div>
+        <h3>Turn analysis (TFRA)</h3>
+        <p>Every <code>invoke_agent</code> trace is one turn, scored for friction — LLM/tool errors, latency vs. <em>this session's</em> median TTFT, and repair loops (tool-call bursts with failures). Best and worst turns surfaced with reasons.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">✂️</div>
+        <h3>Edit survival analysis</h3>
+        <p>Four-gram matching plus a no-revert split (0.4/0.6 weight). Measures whether edits the agent suggested actually survived downstream — the truest signal of acceptance quality.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">💰</div>
+        <h3>Token &amp; cache economics</h3>
+        <p>Per-model cost with configurable pricing (<code>CopilotScope:Pricing</code>), cache hit savings, cost per turn, and cost per accepted edit. Understand what each session actually spent.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">⏱️</div>
+        <h3>Latency-utility model</h3>
+        <p>Per-sample utility curve with &gt;2 s and &gt;8 s risk buckets. Translates raw TTFT numbers into an actionable quality signal — slow responses hurt differently at different thresholds.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">😤</div>
+        <h3>Frustration detection</h3>
+        <p>EN/PL lexicon, Jaccard-distance rephrasing detection, and typography signals (caps lock, repeated punctuation). Local heuristic today; cloud deep-classifier via the judge agent is planned.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🗄️</div>
+        <h3>Postgres persistence</h3>
+        <p>Write-behind upsert every second — telemetry bursts never cause write storms. Rehydrates sessions on startup. A Postgres outage degrades gracefully to in-memory; ingest never blocks.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">📈</div>
+        <h3>Overview dashboard</h3>
+        <p>Cross-session summary: total input/output/cache tokens, tokens per day, calls per model, top sessions by token burn, and average quality. Everything you burned across all chats in one view.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── quality score ─────────────────────────────────────────────────────── -->
+<section class="section" id="quality">
+  <div class="section-inner">
+    <p class="section-label">Quality engine</p>
+    <h2>A score that reflects real work, not a neutral prior</h2>
+    <p>v2 of the quality engine renormalizes weights across components that have data. A session without feedback telemetry isn't penalized — the remaining five components absorb the weight and score what actually happened.</p>
+
+    <div class="score-card">
+      <div class="score-layout">
+        <div class="score-badge-wrap">
+          <div class="score-badge">
+            <div class="score-num">88</div>
+            <div class="score-grade">Excellent</div>
+            <div class="score-conf">confidence 0.91</div>
+          </div>
+          <div class="score-label" style="margin-top:8px">example session</div>
+        </div>
+        <div>
+          <div class="score-components">
+            <div class="sc-row">
+              <span class="sc-name">Reliability</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:96%"></div></div>
+              <span class="sc-pct">96%</span>
+              <span class="sc-weight">×0.25</span>
+            </div>
+            <div class="sc-row">
+              <span class="sc-name">Acceptance</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:82%"></div></div>
+              <span class="sc-pct">82%</span>
+              <span class="sc-weight">×0.20</span>
+            </div>
+            <div class="sc-row">
+              <span class="sc-name">Friction (TFRA)</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:88%"></div></div>
+              <span class="sc-pct">88%</span>
+              <span class="sc-weight">×0.20</span>
+            </div>
+            <div class="sc-row">
+              <span class="sc-name">Latency</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:91%"></div></div>
+              <span class="sc-pct">91%</span>
+              <span class="sc-weight">×0.15</span>
+            </div>
+            <div class="sc-row">
+              <span class="sc-name">Feedback</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:85%"></div></div>
+              <span class="sc-pct">85%</span>
+              <span class="sc-weight">×0.10</span>
+            </div>
+            <div class="sc-row">
+              <span class="sc-name">Efficiency</span>
+              <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:78%"></div></div>
+              <span class="sc-pct">78%</span>
+              <span class="sc-weight">×0.10</span>
+            </div>
+          </div>
+          <div class="score-thresholds">
+            <span class="st"><strong>≥ 85</strong> Excellent</span>
+            <span class="st"><strong>≥ 70</strong> Good</span>
+            <span class="st"><strong>≥ 55</strong> Fair</span>
+            <span class="st"><strong>≥ 40</strong> Poor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:32px">
+      <p class="section-label">Algorithm status</p>
+      <h2>Local-first, cloud-ready</h2>
+      <p>Seven algorithms run entirely on your machine. Three requiring LLM access (G-Eval, SPUR, RAGAS) are planned for the cloud deployment via Azure AI Foundry — they register as "no-data" locally, never as an error.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Algorithm</th>
+              <th>Local</th>
+              <th>Cloud</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Edit Survival Analysis</strong></td>
+              <td><span class="pill pill-local">✓ full</span></td>
+              <td><span class="pill pill-cloud">✓ full</span></td>
+              <td>four-gram + no-revert split</td>
+            </tr>
+            <tr>
+              <td><strong>Acceptance-weighted throughput</strong></td>
+              <td><span class="pill pill-local">✓ full</span></td>
+              <td><span class="pill pill-cloud">✓ full</span></td>
+              <td>LOC/turn, rejection-discounted</td>
+            </tr>
+            <tr>
+              <td><strong>Turn Friction &amp; Repair (TFRA)</strong></td>
+              <td><span class="pill pill-local">✓ full</span></td>
+              <td><span class="pill pill-cloud">✓ full</span></td>
+              <td>error rate, latency, repair loops</td>
+            </tr>
+            <tr>
+              <td><strong>Latency-utility model</strong></td>
+              <td><span class="pill pill-local">✓ full</span></td>
+              <td><span class="pill pill-cloud">✓ full</span></td>
+              <td>utility curve, risk buckets</td>
+            </tr>
+            <tr>
+              <td><strong>Token &amp; cache economics</strong></td>
+              <td><span class="pill pill-local">✓ full</span></td>
+              <td><span class="pill pill-cloud">✓ full</span></td>
+              <td>per-model cost, cache savings</td>
+            </tr>
+            <tr>
+              <td><strong>Frustration detection</strong></td>
+              <td><span class="pill pill-local">heuristic</span></td>
+              <td><span class="pill pill-planned">🔜 deep</span></td>
+              <td>lexicon + rephrasing + typography</td>
+            </tr>
+            <tr>
+              <td><strong>LLM-as-a-Judge (G-Eval)</strong></td>
+              <td><span class="pill pill-planned">—</span></td>
+              <td><span class="pill pill-planned">planned</span></td>
+              <td>needs Azure AI Foundry judge agent</td>
+            </tr>
+            <tr>
+              <td><strong>SPUR / RAGAS</strong></td>
+              <td><span class="pill pill-planned">—</span></td>
+              <td><span class="pill pill-planned">planned</span></td>
+              <td>rubric + retrieval metrics via judge</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── quick start ───────────────────────────────────────────────────────── -->
+<section class="section" id="quickstart">
+  <div class="section-inner">
+    <p class="section-label">Quick start</p>
+    <h2>Up in under a minute</h2>
+    <p>Prerequisites: <strong>.NET 8 SDK</strong> and <strong>Docker</strong>. No workloads — Aspire 9 ships as a NuGet MSBuild SDK.</p>
+
+    <div style="margin-top:28px">
+      <div class="qs-tabs">
+        <button class="qs-tab active" onclick="switchTab(this,'docker')">Docker (no clone)</button>
+        <button class="qs-tab" onclick="switchTab(this,'aspire')">From source (Aspire)</button>
+        <button class="qs-tab" onclick="switchTab(this,'otel')">Configure VS Code</button>
+      </div>
+
+      <div id="tab-docker" class="qs-panel active">
+        <div class="code-block"><span class="c"># Pull from GHCR — no clone needed</span>
+<span class="c"># Linux / macOS / Git Bash:</span>
+<span class="cmd">curl</span> -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+<span class="c"># Windows PowerShell:</span>
+<span class="cmd">curl.exe</span> -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+
+<span class="cmd">docker compose</span> -f docker-compose.ghcr.yml up
+
+<span class="c"># Collector  →  http://localhost:4318   (OTLP ingest + REST API)</span>
+<span class="c"># Dashboard  →  http://localhost:5200   (Blazor UI)</span></div>
+        <p class="qs-note"><strong>One-time setup:</strong> GHCR packages start private — switch each to <strong>public</strong> (GitHub → Packages → Settings) so <code>docker pull</code> works anonymously. Then point your Copilot client at <code>http://localhost:4318</code>.</p>
+      </div>
+
+      <div id="tab-aspire" class="qs-panel">
+        <div class="code-block"><span class="c"># Clone and start with .NET Aspire</span>
+<span class="cmd">git clone</span> https://github.com/konradcinkusz/copilotscope
+<span class="cmd">cd</span> copilotscope
+<span class="cmd">dotnet run</span> --project src/CopilotScope.AppHost
+
+<span class="c"># Aspire starts: Postgres (container, named volume)</span>
+<span class="c">#               pgAdmin (browse the sessions table)</span>
+<span class="c">#               Collector  →  http://localhost:4318</span>
+<span class="c">#               Dashboard  →  http://localhost:5200</span>
+
+<span class="c"># Generate demo telemetry without a real Copilot subscription:</span>
+<span class="cmd">dotnet run</span> --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 my-session</div>
+        <p class="qs-note">F5 on <code>CopilotScope.AppHost</code> does the same with the debugger attached to everything. Run <code>dotnet test</code> to execute the full test suite (decoder, quality, persistence round-trips).</p>
+      </div>
+
+      <div id="tab-otel" class="qs-panel">
+        <div class="code-block"><span class="c">// VS Code settings.json — enable Copilot OTel</span>
+{
+  <span class="prop">"github.copilot.chat.otel.enabled"</span>: <span class="str">true</span>,
+  <span class="prop">"github.copilot.chat.otel.otlpEndpoint"</span>: <span class="str">"http://localhost:4318"</span>,
+  <span class="prop">"github.copilot.chat.otel.captureContent"</span>: <span class="str">true</span>
+  <span class="c">// captureContent stores prompt/response previews (last 100 entries,</span>
+  <span class="c">// truncated at 4 000 chars). Omit if you prefer metadata-only.</span>
+}
+
+<span class="c"># Copilot CLI — one-liner setup (PowerShell):</span>
+<span class="cmd">.\scripts\Enable-CopilotOtel.ps1</span> -CaptureContent
+<span class="cmd">copilot</span>   <span class="c"># run from the same terminal</span></div>
+        <p class="qs-note"><strong>Note:</strong> the CLI follows the OTel GenAI standard — <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code> — which the script sets. <code>COPILOT_OTEL_CAPTURE_CONTENT</code> is not a real variable.</p>
+      </div>
+    </div>
+
+    <div style="margin-top:32px;padding:20px;background:var(--surf);border:1px solid var(--border);border-radius:10px">
+      <p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">Try it without a Copilot subscription</p>
+      <ol style="padding-left:20px;font-size:13px;color:var(--dim);line-height:2">
+        <li>Start the stack (Docker or Aspire)</li>
+        <li>Run <code>dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 demo</code></li>
+        <li>Open the Dashboard — a session named <strong style="color:var(--text)">demo</strong> appears with realistic quality scores</li>
+        <li>Click the session to see turn analysis, score components, and the prompt transcript</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── footer ───────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="footer-brand">
+    <svg width="22" height="22" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="scbgf" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f1923"/><stop offset="100%" stop-color="#1a2d3f"/>
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="50" fill="url(#scbgf)"/>
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.55"/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke="#f59e0b" stroke-width="0.7" opacity="0.28"/>
+      <line x1="8" y1="50" x2="92" y2="50" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+      <line x1="50" y1="8" x2="50" y2="92" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+      <line x1="50" y1="8"  x2="50" y2="12.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="92" y1="50" x2="87.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="50" y1="92" x2="50" y2="87.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="8"  y1="50" x2="12.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <polyline points="8,50 36,50 38,57 42,22 46,62 50,50 92,50"
+        fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="2" fill="#f59e0b" opacity="0.65"/>
+    </svg>
+    CopilotScope
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/konradcinkusz/copilotscope">GitHub</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases">Releases</a>
+    <a href="TUTORIAL.html">Tutorial</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/blob/master/CONTRIBUTING.md">Contributing</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf">Research Paper</a>
+  </div>
+  <p class="footer-copy">MIT License · Sibling project: <a href="https://github.com/konradcinkusz/agenthelm" style="color:var(--teal)">AgentHelm</a></p>
+</footer>
+
+<script>
+function switchTab(btn, id) {
+  document.querySelectorAll('.qs-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.qs-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + id).classList.add('active');
+}
+</script>
+</body>
+</html>
