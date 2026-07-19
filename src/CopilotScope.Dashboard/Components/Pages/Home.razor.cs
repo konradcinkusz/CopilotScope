@@ -18,6 +18,7 @@ public partial class Home : ComponentBase, IDisposable
     private bool _showInternal;
     private bool _showAllTurns;
     private bool _chatWasOpen;
+    private bool _repoNormalization = true;
     private ElementReference _chatScrollRef;
 
     private enum ViewMode { Basic, Advanced, Full }
@@ -284,26 +285,47 @@ public partial class Home : ComponentBase, IDisposable
         _ => "unknown"
     };
 
-    /// <summary>CSS class for quality score color — uses percentile rank when history is available, absolute grade as fallback.</summary>
-    private static string RelativeGradeClass(QualityReportDto q) => q.PercentileRank switch
+    /// <summary>Deterministic 0–7 index from repo name for the 8-hue accent palette. Returns -1 when repo is null.</summary>
+    private static int RepoColorIndex(string? repo)
     {
-        >= 0.75 => "grade-excellent",
-        >= 0.35 => "grade-good",
-        >= 0.15 => "grade-fair",
-        not null => "grade-poor",
-        _ => $"grade-{q.Grade}"
-    };
+        if (repo is null) return -1;
+        var h = 0;
+        foreach (var c in repo) h = (h * 31 + c) & 0x7fffffff;
+        return h % 8;
+    }
 
-    /// <summary>Subtitle line for quality score — shows percentile context when history is available.</summary>
-    private static string QualitySubtitle(QualityReportDto q)
+    /// <summary>Last path segment of a repo URL/path — the short human-readable name.</summary>
+    private static string? RepoShortName(string? repo)
     {
-        if (q.PercentileRank is not { } pct || q.HistoryCount is not { } n || n < 3)
+        if (repo is null) return null;
+        var s = repo.TrimEnd('/', '\\');
+        var slash = s.LastIndexOfAny(['/', '\\']);
+        return slash >= 0 ? s[(slash + 1)..] : s;
+    }
+
+    /// <summary>CSS class for quality score color — uses percentile rank when normalization is on and history is available, absolute grade otherwise.</summary>
+    private static string RelativeGradeClass(QualityReportDto q, bool normalize = true) =>
+        (normalize ? q.PercentileRank : null) switch
+        {
+            >= 0.75 => "grade-excellent",
+            >= 0.35 => "grade-good",
+            >= 0.15 => "grade-fair",
+            not null => "grade-poor",
+            _ => $"grade-{q.Grade}"
+        };
+
+    /// <summary>Subtitle line for quality score — shows percentile context when normalization is on and history is available.
+    /// When <paramref name="repo"/> is non-null the peer pool is repo-scoped.</summary>
+    private static string QualitySubtitle(QualityReportDto q, string? repo = null, bool normalize = true)
+    {
+        if (!normalize || q.PercentileRank is not { } pct || q.HistoryCount is not { } n || n < 3)
             return $"/ 100 · {q.Grade} · confidence {(q.Confidence * 100):0}%";
 
         var pctLabel = $"{(int)(pct * 100)}th percentile";
         var zLabel = q.ZScore is { } z ? $" ({(z >= 0 ? "+" : "")}{z:0.0}σ)" : "";
         var meanLabel = q.HistoryMean?.ToString("0.0") ?? "?";
-        return $"/ 100 · {pctLabel}{zLabel} vs last {n} sessions (mean {meanLabel})";
+        var context = repo is not null ? $"{n} repo sessions" : $"last {n} sessions";
+        return $"/ 100 · {pctLabel}{zLabel} vs {context} (mean {meanLabel})";
     }
 
     public void Dispose()

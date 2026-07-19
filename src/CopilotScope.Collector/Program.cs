@@ -159,19 +159,39 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
 var api = app.MapGroup("/api");
 
 api.MapGet("/sessions", (bool? includeInternal) =>
-    Results.Ok(store.All
+{
+    // Build per-repo quality score pools so the list can show relative rank within each repo.
+    var userSessions = store.All
+        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0)
+        .ToList();
+    var repoScores = userSessions
+        .Where(x => x.Repository is not null)
+        .GroupBy(x => x.Repository!, StringComparer.Ordinal)
+        .ToDictionary(g => g.Key, g => g.Select(x => quality.Evaluate(x).Score).ToList(), StringComparer.Ordinal);
+
+    return Results.Ok(store.All
         .Where(s => includeInternal == true || !SessionClassifier.IsInternal(s.Kind))
         .OrderByDescending(s => s.LastSeen)
-        .Select(s => Dto.Summary(s, quality))));
+        .Select(s =>
+        {
+            var scores = s.Repository is { } repo
+                && repoScores.TryGetValue(repo, out var rs) && rs.Count >= 3 ? rs : null;
+            return Dto.Summary(s, quality, scores);
+        }));
+});
 
 api.MapGet("/sessions/{id}", (string id) =>
 {
     if (store.Get(Uri.UnescapeDataString(id)) is not { } s) return Results.NotFound();
-    // Compute all user-session scores for percentile ranking (excludes internal helper calls).
-    var allScores = store.All
-        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0)
-        .Select(x => quality.Evaluate(x).Score)
-        .ToList();
+    var userSessions = store.All
+        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0);
+    // Prefer repo-scoped peer group; fall back to all sessions when fewer than 3 peers share the repo.
+    var repoScores = s.Repository is { } repo
+        ? userSessions.Where(x => x.Repository == repo).Select(x => quality.Evaluate(x).Score).ToList()
+        : null;
+    var allScores = repoScores is { Count: >= 3 }
+        ? repoScores
+        : userSessions.Select(x => quality.Evaluate(x).Score).ToList();
     return Results.Ok(Dto.Detail(s, quality, insightPipeline, allScores));
 });
 
