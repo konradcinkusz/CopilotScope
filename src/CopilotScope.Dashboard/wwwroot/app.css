@@ -238,6 +238,28 @@ html, body {
 .btn-sm { font-size: 10px; padding: 2px 7px; margin-left: auto; }
 .turns-toggle { color: var(--dim); }
 
+/* -------------------------------------------------------- view mode toggle */
+
+.view-mode-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+}
+.view-mode-label {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 1.5px; color: var(--dim); margin-right: 4px;
+}
+.view-btn {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px;
+  color: var(--dim); font-family: var(--mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1px;
+  padding: 3px 10px; cursor: pointer; transition: border-color .15s, color .15s;
+}
+.view-btn:hover { color: var(--text); border-color: var(--dim); }
+.view-btn.active {
+  color: var(--copper); border-color: var(--copper);
+  background: color-mix(in srgb, var(--copper) 10%, var(--panel-2));
+}
+.view-btn:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
 /* -------------------------------------------------- percentile / history bar */
 
 .percentile-bar {

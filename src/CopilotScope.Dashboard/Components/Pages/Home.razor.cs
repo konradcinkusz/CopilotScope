@@ -19,6 +19,39 @@ public partial class Home : ComponentBase, IDisposable
     private bool _showAllTurns;
     private bool _chatWasOpen;
     private ElementReference _chatScrollRef;
+
+    private enum ViewMode { Basic, Advanced, Full }
+    private ViewMode _viewMode = ViewMode.Advanced;
+
+    private bool ShowTile(string key, SessionSummaryDto s) => _viewMode switch
+    {
+        ViewMode.Basic => false,
+        ViewMode.Full  => key is not ("edits" or "thumbs" or "loc") || !IsCli(s),
+        _ => key switch
+        {
+            "tokens_in"   => s.InputTokens > 0,
+            "tokens_out"  => s.OutputTokens > 0,
+            "cache_read"  => s.CacheReadTokens > 0,
+            "net_compute" => s.InputTokens > 0,
+            "ttft_p50"    => s.TtftP50Ms > 0,
+            "ttft_p95"    => s.TtftP95Ms > 0,
+            "llm_calls"   => s.ChatCalls > 0,
+            "tool_calls"  => true,
+            "turns"       => true,
+            "edits"       => !IsCli(s) && s.EditsAccepted + s.EditsRejected > 0,
+            "thumbs"      => !IsCli(s) && s.ThumbsUp + s.ThumbsDown > 0,
+            "loc"         => !IsCli(s) && (s.LinesAdded > 0 || s.LinesRemoved > 0),
+            _             => true
+        }
+    };
+
+    private bool ShowInsight(InsightReportDto r) => _viewMode switch
+    {
+        ViewMode.Basic    => false,
+        ViewMode.Advanced => r.Status != "no-data",
+        _                 => true
+    };
+
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>Parses one transcript entry into renderable chat messages (prompt side then response side).</summary>
