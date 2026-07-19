@@ -1921,4 +1921,677 @@ Since all values are~1, the score is always~100 regardless of weight choice
 (the formula reduces to $100 \cdot C / C = 100$).  The sensitivity only
 manifests when components have differing values---which is the practical case.
 
+% ------------------------------------------------------------
+\section{Algorithm 1 Walkthrough and Practice Exercises}
+\label{app:walkthrough-quality}
+% ------------------------------------------------------------
+
+This appendix is a self-contained tutorial for the
+\textbf{Composite Session Quality Engine} (Section~\ref{sec:quality-engine}).
+Every formula is restated in plain language, every variable is defined in one
+place, and four graded exercises give you concrete numbers to work through by
+hand before consulting the solutions.
+
+% ---- A.3.1 Variable Reference ----
+\subsection{Variable Reference}
+\label{app:var-ref}
+
+Table~\ref{tab:var-ref} lists every symbol you will encounter, together with
+its meaning, the range it lives in, and where its value comes from.
+
+\begin{table}[h!]
+\centering
+\small
+\caption{Complete variable reference for the Composite Quality Engine.}
+\label{tab:var-ref}
+\begin{tabular}{@{}p{1.7cm}p{4.4cm}p{2.0cm}p{5.2cm}@{}}
+\toprule
+Symbol & Plain-English meaning & Range / unit & Where it comes from \\
+\midrule
+$e_{\text{LLM}}$ & LLM (chat) error count & $\geq 0$, integer & Telemetry: error spans \\
+$c_{\text{LLM}}$ & Total LLM calls & $\geq 0$, integer & Telemetry: span counts \\
+$e_{\text{tool}}$ & Tool-call error count & $\geq 0$, integer & Telemetry: error spans \\
+$c_{\text{tool}}$ & Total tool calls & $\geq 0$, integer & Telemetry: span counts \\
+$\hat{e}$ & Weighted error rate; LLM errors count double & $[0,1]$ & $(2e_{\text{LLM}}+e_{\text{tool}})/\max(1,2c_{\text{LLM}}+c_{\text{tool}})$ \\
+$v_R$ & Reliability component value & $[0,1]$ & $\clamp{(1-\hat{e})^2}{0}{1}$ \\
+$a$ & Edits accepted by the user & $\geq 0$, integer & Telemetry: accept events \\
+$j$ & Edits rejected by the user & $\geq 0$, integer & Telemetry: reject events \\
+$\alpha$ & Edit acceptance ratio & $[0,1]$ & $a/(a+j)$ \\
+$\bar{s}$ & Mean edit survival score (Algorithm~3) & $[0,1]$ & Output of Edit Survival Analysis \\
+$v_A$ & Acceptance component value & $[0,1]$ & $\clamp{0.6\alpha+0.4\bar{s}}{0}{1}$ \\
+$\bar{\tau}$ & Mean TFRA turn score (Algorithm~2) & $[0,1]$ & Output of TFRA \\
+$v_\Phi$ & Friction component value & $[0,1]$ & Pass-through: $\bar{\tau}$ \\
+$p_{50}$ & Median TTFT, ms & $[0,\infty)$ & Percentile of latency samples \\
+$v_\Lambda$ & Latency component value & $[0,1]$ & Log-linear curve $L(p_{50})$ \\
+$u^+$ & Thumbs-up vote count & $\geq 0$, integer & Telemetry: feedback events \\
+$u^-$ & Thumbs-down vote count & $\geq 0$, integer & Telemetry: feedback events \\
+$v_F$ & Feedback component value & $[0,1]$ & $u^+/(u^++u^-)$ \\
+$r_c$ & Prompt-cache hit ratio (Algorithm~6) & $[0,1]$ & Output of Token Economics \\
+$\bar{t}$ & Mean turns per agent invocation & $\geq 0$ & Telemetry: invocation spans \\
+$e_{\mathrm{tpi}}$ & Turns-per-invocation efficiency score & $[0,1]$ & Computed from $\bar{t}$ (see below) \\
+$v_E$ & Efficiency component value & $[0,1]$ & Mean of available sub-signals \\
+$n_i$ & Observed data-point count for component $i$ & $\geq 0$, integer & Count of relevant telemetry events \\
+$\calI$ & Set of informative component indices ($n_i>0$) & $\subseteq\{1,\ldots,6\}$ & Determined at scoring time \\
+$C$ & Coverage: sum of informative base weights & $(0,1]$ & $\sum_{i\in\calI}w_i$ \\
+$Q$ & Composite quality score & $[0,100]$ & $(100/C)\sum_{i\in\calI}w_iv_i$ \\
+$\rho_i$ & Sample ramp for component $i$ & $[0,1]$ & $\min(1,\,n_i/5)$ \\
+$\rho$ & Weighted mean sample ramp & $[0,1]$ & $(\sum_{i\in\calI}w_i\rho_i)/C$ \\
+Confidence & How much data backs the score & $[0,1]$ & $C\cdot\rho$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Turns-per-invocation score $e_{\mathrm{tpi}}$.}
+Sessions where the agent needs many back-and-forth turns per invocation
+signal friction or scope creep.  The score is 1 up to 8~turns, then falls
+linearly and saturates at 0 beyond 25~turns:
+\[
+  e_{\mathrm{tpi}} =
+  \begin{cases}
+    1 & \bar{t} \leq 8 \\
+    \clamp{1 - \dfrac{\bar{t}-8}{17}}{0}{1} & \bar{t} > 8.
+  \end{cases}
+\]
+
+\paragraph{Latency utility $L(t)$.}
+The log-linear curve converts a TTFT value in milliseconds to a $[0,1]$
+utility, reflecting that users perceive time multiplicatively:
+\[
+  L(t) =
+  \begin{cases}
+    1 & t \leq 300\,\text{ms} \\
+    1 - \dfrac{\ln(t/300)}{\ln(10000/300)} & 300 < t < 10000\,\text{ms} \\
+    0 & t \geq 10000\,\text{ms.}
+  \end{cases}
+\]
+The normalising constant $\ln(10000/300) = \ln(33.333) = 3.5066$ is fixed
+for every calculation---compute it once and reuse it.
+
+% ---- A.3.2 Eight-Step Blueprint ----
+\subsection{Eight-Step Algorithm Blueprint}
+\label{app:blueprint}
+
+Work through the steps in order; each produces values consumed by later steps.
+
+\begin{enumerate}
+
+\item \textbf{Compute Reliability $v_R$.}
+LLM errors count double because they disrupt conversation flow more
+severely than tool errors.  Divide the weighted error count by the
+weighted call count (the $\max(\cdot,1)$ prevents division by zero):
+\[
+  \hat{e} = \frac{2\,e_{\text{LLM}} + e_{\text{tool}}}
+                 {\max\!\left(1,\;2\,c_{\text{LLM}} + c_{\text{tool}}\right)}.
+\]
+Apply the quadratic penalty---squaring amplifies moderate error rates
+and provides strong discrimination at high rates:
+\[
+  v_R = \clamp{(1-\hat{e})^2}{0}{1}.
+\]
+\emph{Quick check}: a 10\,\% error rate costs nearly 19\,\% in reliability;
+a 50\,\% error rate gives $v_R = 0.25$.
+
+\item \textbf{Compute Acceptance $v_A$.}
+Blend the immediate accept/reject ratio with the long-run survival
+score from Algorithm~3:
+\[
+  \alpha = \frac{a}{a+j}, \qquad
+  v_A = \clamp{0.6\,\alpha + 0.4\,\bar{s}}{0}{1}.
+\]
+The 60/40 split means a user who clicks \emph{Accept} but immediately
+rewrites the code is penalised through the $\bar{s}$ term.
+
+\item \textbf{Compute Friction $v_\Phi$.}
+This is a direct pass-through of the TFRA mean produced by Algorithm~2;
+no further transformation is needed since $\bar{\tau}\in[0,1]$:
+\[
+  v_\Phi = \bar{\tau}.
+\]
+
+\item \textbf{Compute Latency $v_\Lambda$.}
+Apply the boundary conditions first (clamp to 1 if $p_{50}\leq300$\,ms,
+to 0 if $p_{50}\geq10000$\,ms), otherwise use the log-linear branch:
+\[
+  v_\Lambda = L(p_{50}) = 1 - \frac{\ln(p_{50}/300)}{3.5066}.
+\]
+
+\item \textbf{Compute Feedback $v_F$.}
+This component exists only when at least one explicit vote was cast
+($u^++u^->0$); otherwise it is absent and dropped from $\calI$:
+\[
+  v_F = \frac{u^+}{u^+ + u^-}.
+\]
+
+\item \textbf{Compute Efficiency $v_E$.}
+Collect all available sub-signals (cache-hit ratio $r_c$ and
+turns-per-invocation score $e_{\mathrm{tpi}}$) and average them:
+\[
+  v_E = \frac{1}{|\mathcal{P}|}\sum_{p\in\mathcal{P}} e_p.
+\]
+If neither sub-signal exists, Efficiency is absent from $\calI$.
+
+\item \textbf{Identify informative components and compute Coverage $C$.}
+Mark a component as informative if it has at least one data point
+($n_i > 0$).  Collect these into $\calI$ and sum their base weights:
+\[
+  C = \sum_{i\in\calI} w_i.
+\]
+If $\calI=\varnothing$ (no data at all), return the neutral prior
+$Q=70$ at Confidence~0 and stop.  Otherwise compute:
+\[
+  \Sigma = \sum_{i\in\calI} w_i\,v_i.
+\]
+
+\item \textbf{Compute $Q$ and Confidence.}
+Renormalise by coverage so that absent components do not compress the
+score toward a false neutral:
+\[
+  Q = \frac{100}{C}\,\Sigma \;\in\; [0,100].
+\]
+Assign a grade using the thresholds: $\geq85$ excellent, $\geq70$ good,
+$\geq55$ fair, $\geq40$ poor, $<40$ critical.
+
+Then compute confidence.  The sample ramp $\rho_i=\min(1,\,n_i/5)$
+saturates at 1 after five data points per component:
+\[
+  \rho = \frac{\displaystyle\sum_{i\in\calI} w_i\,\rho_i}{C},
+  \qquad
+  \text{Confidence} = C\cdot\rho \;\in\; [0,1].
+\]
+A confidence of 1.0 means full coverage and at least five samples per
+component.  Scores with confidence below 0.3 are early estimates.
+
+\end{enumerate}
+
+\paragraph{Optional: Relative position.}
+Given a history window of $H$ sessions with mean $\mu$ and standard
+deviation $\sigma$, and $k$ sessions that scored at or below $Q$:
+\[
+  z = \frac{Q-\mu}{\sigma}, \qquad
+  \text{PercentileRank} = \frac{k}{H}.
+\]
+Labels: PercentileRank $\geq0.75$ $\Rightarrow$ above baseline; $[0.35,0.75)$
+$\Rightarrow$ at baseline; $<0.35$ $\Rightarrow$ below baseline.
+
+% ---- A.3.3 Exercises ----
+\subsection{Practice Exercises}
+\label{app:exercises}
+
+The four exercises below increase in difficulty.  Solve each one completely
+before consulting the solutions in \S\ref{app:solutions}.  A basic calculator
+and the natural-logarithm function are the only tools required.
+
+\paragraph{Useful logarithm constants (carry 4 decimal places).}
+\[
+  \ln(10000/300) = 3.5066,\quad
+  \ln 2 \approx 0.6931,\quad
+  \ln 3 \approx 1.0986,\quad
+  \ln 5 \approx 1.6094,\quad
+  \ln 10 \approx 2.3025.
+\]
+
+% ---- Exercise 1 ----
+\subsubsection*{Exercise~1 \textmd{(warm-up)} --- All six components present}
+\label{app:ex1}
+
+A well-behaved session produced the telemetry shown in
+Table~\ref{tab:ex1-input}.  Compute $Q$ and the Confidence score.
+
+\begin{table}[h!]
+\centering
+\caption{Input data for Exercise~1.}
+\label{tab:ex1-input}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Signal & Symbol & Value \\
+\midrule
+LLM errors / calls & $e_{\text{LLM}},\,c_{\text{LLM}}$ & 0 errors, 10 calls \\
+Tool errors / calls & $e_{\text{tool}},\,c_{\text{tool}}$ & 0 errors, 15 calls \\
+Edits accepted / rejected & $a,\,j$ & 12 accepted, 3 rejected \\
+Mean survival score & $\bar{s}$ & 0.82 \\
+Mean TFRA turn score & $\bar{\tau}$ & 0.95 \hfill($N=6$ turns) \\
+Median TTFT & $p_{50}$ & 400\,ms \hfill(6 latency samples) \\
+Thumbs-up / down & $u^+,\,u^-$ & 4 up, 0 down \\
+Cache hit ratio & $r_c$ & 0.65 \\
+Mean turns / invocation & $\bar{t}$ & 4 turns \hfill(5 invocations) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\emph{What to compute}: $\hat{e}$, $v_R$, $\alpha$, $v_A$,
+$v_\Phi$, $v_\Lambda$, $v_F$, $e_{\mathrm{tpi}}$, $v_E$, $C$, $\Sigma$,
+$Q$, $\rho_i$ for each component, $\rho$, Confidence.
+
+\noindent\emph{Hint for latency}:
+$\ln(400/300) = \ln(4/3) = 2\ln2 - \ln3 \approx 2(0.6931) - 1.0986 = 0.2876$.
+
+% ---- Exercise 2 ----
+\subsubsection*{Exercise~2 \textmd{(missing components)} --- Feedback and Efficiency absent}
+\label{app:ex2}
+
+The assistant was used without any explicit votes and was run in
+non-agentic mode, so there are no feedback events and no agent invocations.
+Identify $\calI$, then compute $Q$ and Confidence.
+
+\begin{table}[h!]
+\centering
+\caption{Input data for Exercise~2.}
+\label{tab:ex2-input}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Signal & Symbol & Value \\
+\midrule
+LLM errors / calls & $e_{\text{LLM}},\,c_{\text{LLM}}$ & 2 errors, 15 calls \\
+Tool errors / calls & $e_{\text{tool}},\,c_{\text{tool}}$ & 3 errors, 25 calls \\
+Edits accepted / rejected & $a,\,j$ & 8 accepted, 4 rejected \\
+Mean survival score & $\bar{s}$ & 0.55 \\
+Mean TFRA turn score & $\bar{\tau}$ & 0.72 \hfill($N=8$ turns) \\
+Median TTFT & $p_{50}$ & 2{,}000\,ms \hfill(8 latency samples) \\
+Thumbs-up / down & --- & no votes cast \\
+Cache / invocations & --- & no token data, no agent invocations \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\emph{Hint for latency}:
+$\ln(2000/300)=\ln(20/3)=2\ln2+\ln5-\ln3
+\approx 2(0.6931)+1.6094-1.0986=1.8970$.
+
+% ---- Exercise 3 ----
+\subsubsection*{Exercise~3 \textmd{(degraded session)} --- Heavy errors, high turn count, slow latency}
+\label{app:ex3}
+
+A troubled debugging session.  Compute $Q$ and Confidence, then assign
+the correct grade.  Pay special attention to the $e_{\mathrm{tpi}}$
+penalty for $\bar{t}>8$.
+
+\begin{table}[h!]
+\centering
+\caption{Input data for Exercise~3.}
+\label{tab:ex3-input}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Signal & Symbol & Value \\
+\midrule
+LLM errors / calls & $e_{\text{LLM}},\,c_{\text{LLM}}$ & 4 errors, 8 calls \\
+Tool errors / calls & $e_{\text{tool}},\,c_{\text{tool}}$ & 5 errors, 20 calls \\
+Edits accepted / rejected & $a,\,j$ & 5 accepted, 10 rejected \\
+Mean survival score & $\bar{s}$ & 0.30 \\
+Mean TFRA turn score & $\bar{\tau}$ & 0.60 \hfill($N=5$ turns) \\
+Median TTFT & $p_{50}$ & 5{,}000\,ms \hfill(5 latency samples) \\
+Thumbs-up / down & --- & no votes cast \\
+Cache hit ratio & $r_c$ & 0.20 \\
+Mean turns / invocation & $\bar{t}$ & 18 turns \hfill(3 invocations) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\emph{Hint for latency}:
+$\ln(5000/300)=\ln10+\ln5-\ln3
+\approx 2.3025+1.6094-1.0986=2.8133$.
+
+% ---- Exercise 4 ----
+\subsubsection*{Exercise~4 \textmd{(full pipeline)} --- Composite score + relative position}
+\label{app:ex4}
+
+A good-quality session with all six components.  After computing $Q$ and
+Confidence, use the history window to derive the $z$-score, the percentile
+rank, and the relative label.
+
+\begin{table}[h!]
+\centering
+\caption{Input data for Exercise~4.}
+\label{tab:ex4-input}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Signal & Symbol & Value \\
+\midrule
+LLM errors / calls & $e_{\text{LLM}},\,c_{\text{LLM}}$ & 1 error, 10 calls \\
+Tool errors / calls & $e_{\text{tool}},\,c_{\text{tool}}$ & 0 errors, 12 calls \\
+Edits accepted / rejected & $a,\,j$ & 18 accepted, 2 rejected \\
+Mean survival score & $\bar{s}$ & 0.88 \\
+Mean TFRA turn score & $\bar{\tau}$ & 0.80 \hfill($N=12$ turns) \\
+Median TTFT & $p_{50}$ & 1{,}000\,ms \hfill(12 latency samples) \\
+Thumbs-up / down & $u^+,\,u^-$ & 2 up, 1 down \\
+Cache hit ratio & $r_c$ & 0.50 \\
+Mean turns / invocation & $\bar{t}$ & 10 turns \hfill(8 invocations) \\
+\midrule
+History window size & $H$ & 10 recent sessions \\
+Historical mean / std dev & $\mu,\,\sigma$ & $\mu=78.0$, $\sigma=8.0$ \\
+Sessions scoring $\leq Q$ & $k$ & 3 out of 10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\emph{Hint for latency}:
+$\ln(1000/300)=\ln10-\ln3\approx2.3025-1.0986=1.2039$.
+
+\noindent\emph{Hint for $e_{\mathrm{tpi}}$}: $\bar{t}=10>8$, so apply
+the linear-penalty branch: $1-(10-8)/17$.
+
+% ---- A.3.4 Solutions ----
+\subsection{Solutions}
+\label{app:solutions}
+
+\textit{Try all four exercises before reading on.}
+Solutions are written in the same step-by-step format as the main worked
+example in \S\ref{sec:quality-engine-example}.
+
+% -------- Solution 1 --------
+\subsubsection*{Solution to Exercise~1}
+
+\paragraph{Step~1 --- $\hat{e}$ and $v_R$.}
+No errors of either kind; the weighted numerator is zero.
+\[
+  \hat{e} = \frac{2\times0+0}{\max(1,\;2\times10+15)} = \frac{0}{35} = 0.
+\]
+\[
+  v_R = (1-0)^2 = 1.0000.
+\]
+
+\paragraph{Step~2 --- $\alpha$ and $v_A$.}
+\[
+  \alpha = \frac{12}{12+3} = \frac{12}{15} = 0.8000.
+\]
+\[
+  v_A = 0.6(0.8000)+0.4(0.82) = 0.4800+0.3280 = 0.8080.
+\]
+
+\paragraph{Step~3 --- $v_\Phi$.} $v_\Phi = 0.9500$.
+
+\paragraph{Step~4 --- $v_\Lambda$.}
+\[
+  v_\Lambda = 1 - \frac{0.2876}{3.5066} = 1 - 0.0820 = 0.9180.
+\]
+
+\paragraph{Step~5 --- $v_F$.}
+\[
+  v_F = \frac{4}{4+0} = 1.0000.
+\]
+
+\paragraph{Step~6 --- $e_{\mathrm{tpi}}$ and $v_E$.}
+$\bar{t}=4\leq8$, so $e_{\mathrm{tpi}}=1$.
+\[
+  v_E = \frac{0.65+1.00}{2} = 0.8250.
+\]
+
+\paragraph{Step~7 --- $C$ and $\Sigma$.}
+All six components informative; $C=1.00$.
+\[
+  \Sigma = 0.25(1.0000)+0.20(0.8080)+0.20(0.9500)
+         +0.15(0.9180)+0.10(1.0000)+0.10(0.8250)
+\]
+\[
+  \phantom{\Sigma}= 0.2500+0.1616+0.1900+0.1377+0.1000+0.0825 = 0.9218.
+\]
+
+\paragraph{Step~8 --- $Q$ and Confidence.}
+\[
+  Q = \frac{100}{1.00}\times0.9218 = 92.18 \quad (\text{grade: \textbf{excellent}}).
+\]
+Sample counts $n_R=25$, $n_A=15$, $n_\Phi=6$, $n_\Lambda=6$, $n_E=5$
+give $\rho=1$; $n_F=4$ gives $\rho_F=\min(1,4/5)=0.80$.
+\[
+  \rho = \frac{0.25+0.20+0.20+0.15+0.10(0.80)+0.10}{1.00} = 0.98,
+  \qquad \text{Confidence} = 0.98.
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Summary --- Exercise~1 solution.}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Component & $v_i$ & $w_i$ & $w_iv_i$ \\
+\midrule
+Reliability  & 1.0000 & 0.25 & 0.2500 \\
+Acceptance   & 0.8080 & 0.20 & 0.1616 \\
+Friction     & 0.9500 & 0.20 & 0.1900 \\
+Latency      & 0.9180 & 0.15 & 0.1377 \\
+Feedback     & 1.0000 & 0.10 & 0.1000 \\
+Efficiency   & 0.8250 & 0.10 & 0.0825 \\
+\midrule
+\multicolumn{3}{l}{$\Sigma$, $C$, $Q$, Confidence}
+  & $0.9218$;\; $1.00$;\; \textbf{92.18};\; $0.98$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------- Solution 2 --------
+\subsubsection*{Solution to Exercise~2}
+
+\paragraph{Informative set.}
+Feedback and Efficiency absent; $\calI=\{R,A,\Phi,\Lambda\}$.
+
+\paragraph{Step~1 --- $\hat{e}$ and $v_R$.}
+\[
+  \hat{e} = \frac{2\times2+3}{\max(1,\;2\times15+25)} = \frac{7}{55} = 0.1273.
+\]
+\[
+  v_R = (1-0.1273)^2 = 0.8727^2 = 0.7616.
+\]
+
+\paragraph{Step~2 --- $\alpha$ and $v_A$.}
+\[
+  \alpha = \frac{8}{8+4} = 0.6667, \qquad
+  v_A = 0.6(0.6667)+0.4(0.55) = 0.4000+0.2200 = 0.6200.
+\]
+
+\paragraph{Step~3 --- $v_\Phi$.} $v_\Phi = 0.7200$.
+
+\paragraph{Step~4 --- $v_\Lambda$.}
+\[
+  v_\Lambda = 1 - \frac{1.8970}{3.5066} = 1 - 0.5410 = 0.4590.
+\]
+
+\paragraph{Step~7 --- $C$ and $\Sigma$.}
+$C = 0.25+0.20+0.20+0.15 = 0.80$.
+\[
+  \Sigma = 0.25(0.7616)+0.20(0.6200)+0.20(0.7200)+0.15(0.4590)
+\]
+\[
+  \phantom{\Sigma}= 0.1904+0.1240+0.1440+0.0689 = 0.5273.
+\]
+
+\paragraph{Step~8 --- $Q$ and Confidence.}
+\[
+  Q = \frac{100}{0.80}\times0.5273 = 65.91 \quad (\text{grade: \textbf{good}}).
+\]
+All four active components have ample samples ($\rho_i=1$):
+\[
+  \rho = \frac{0.80}{0.80} = 1.00, \qquad \text{Confidence} = 0.80\times1.00 = 0.80.
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Summary --- Exercise~2 solution.}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Component & $v_i$ & $w_i$ & $w_iv_i$ \\
+\midrule
+Reliability  & 0.7616 & 0.25 & 0.1904 \\
+Acceptance   & 0.6200 & 0.20 & 0.1240 \\
+Friction     & 0.7200 & 0.20 & 0.1440 \\
+Latency      & 0.4590 & 0.15 & 0.0689 \\
+Feedback     & ---    & 0.10 & absent \\
+Efficiency   & ---    & 0.10 & absent \\
+\midrule
+\multicolumn{3}{l}{$\Sigma$, $C$, $Q$, Confidence}
+  & $0.5273$;\; $0.80$;\; \textbf{65.91};\; $0.80$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------- Solution 3 --------
+\subsubsection*{Solution to Exercise~3}
+
+\paragraph{Informative set.}
+Feedback absent; $\calI=\{R,A,\Phi,\Lambda,E\}$.
+
+\paragraph{Step~1 --- $\hat{e}$ and $v_R$.}
+\[
+  \hat{e} = \frac{2\times4+5}{\max(1,\;2\times8+20)} = \frac{13}{36} = 0.3611.
+\]
+\[
+  v_R = (1-0.3611)^2 = 0.6389^2 = 0.4082.
+\]
+
+\paragraph{Step~2 --- $\alpha$ and $v_A$.}
+\[
+  \alpha = \frac{5}{5+10} = 0.3333, \qquad
+  v_A = 0.6(0.3333)+0.4(0.30) = 0.2000+0.1200 = 0.3200.
+\]
+
+\paragraph{Step~3 --- $v_\Phi$.} $v_\Phi = 0.6000$.
+
+\paragraph{Step~4 --- $v_\Lambda$.}
+\[
+  v_\Lambda = 1 - \frac{2.8133}{3.5066} = 1 - 0.8023 = 0.1977.
+\]
+
+\paragraph{Step~6 --- $e_{\mathrm{tpi}}$ and $v_E$.}
+$\bar{t}=18>8$:
+\[
+  e_{\mathrm{tpi}} = \clamp{1-\frac{18-8}{17}}{0}{1}
+                  = \clamp{1-0.5882}{0}{1} = 0.4118.
+\]
+\[
+  v_E = \frac{0.20+0.4118}{2} = 0.3059.
+\]
+
+\paragraph{Step~7 --- $C$ and $\Sigma$.}
+$C = 0.25+0.20+0.20+0.15+0.10 = 0.90$.
+\[
+  \Sigma = 0.25(0.4082)+0.20(0.3200)+0.20(0.6000)+0.15(0.1977)+0.10(0.3059)
+\]
+\[
+  \phantom{\Sigma}= 0.1021+0.0640+0.1200+0.0297+0.0306 = 0.3464.
+\]
+
+\paragraph{Step~8 --- $Q$ and Confidence.}
+\[
+  Q = \frac{100}{0.90}\times0.3464 = 38.49 \quad (\text{grade: \textbf{critical}}).
+\]
+$n_R=28$, $n_A=15$, $n_\Phi=5$, $n_\Lambda=5$ give $\rho=1$;
+$n_E=3$ gives $\rho_E=0.60$.
+\[
+  \rho = \frac{0.25+0.20+0.20+0.15+0.10(0.60)}{0.90}
+       = \frac{0.86}{0.90} = 0.9556,
+  \qquad \text{Confidence} = 0.90\times0.9556 = 0.86.
+\]
+
+\begin{table}[h!]
+\centering
+\caption{Summary --- Exercise~3 solution.}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Component & $v_i$ & $w_i$ & $w_iv_i$ \\
+\midrule
+Reliability  & 0.4082 & 0.25 & 0.1021 \\
+Acceptance   & 0.3200 & 0.20 & 0.0640 \\
+Friction     & 0.6000 & 0.20 & 0.1200 \\
+Latency      & 0.1977 & 0.15 & 0.0297 \\
+Feedback     & ---    & 0.10 & absent \\
+Efficiency   & 0.3059 & 0.10 & 0.0306 \\
+\midrule
+\multicolumn{3}{l}{$\Sigma$, $C$, $Q$, Confidence}
+  & $0.3464$;\; $0.90$;\; \textbf{38.49};\; $0.86$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------- Solution 4 --------
+\subsubsection*{Solution to Exercise~4}
+
+\paragraph{Step~1 --- $\hat{e}$ and $v_R$.}
+\[
+  \hat{e} = \frac{2\times1+0}{\max(1,\;2\times10+12)} = \frac{2}{32} = 0.0625.
+\]
+\[
+  v_R = (1-0.0625)^2 = 0.9375^2 = 0.8789.
+\]
+
+\paragraph{Step~2 --- $\alpha$ and $v_A$.}
+\[
+  \alpha = \frac{18}{18+2} = 0.90, \qquad
+  v_A = 0.6(0.90)+0.4(0.88) = 0.5400+0.3520 = 0.8920.
+\]
+
+\paragraph{Step~3 --- $v_\Phi$.} $v_\Phi = 0.8000$.
+
+\paragraph{Step~4 --- $v_\Lambda$.}
+\[
+  v_\Lambda = 1 - \frac{1.2039}{3.5066} = 1 - 0.3433 = 0.6567.
+\]
+
+\paragraph{Step~5 --- $v_F$.}
+\[
+  v_F = \frac{2}{2+1} = 0.6667.
+\]
+
+\paragraph{Step~6 --- $e_{\mathrm{tpi}}$ and $v_E$.}
+$\bar{t}=10>8$:
+\[
+  e_{\mathrm{tpi}} = 1-\frac{10-8}{17} = 1-\frac{2}{17} = 0.8824.
+\]
+\[
+  v_E = \frac{0.50+0.8824}{2} = 0.6912.
+\]
+
+\paragraph{Step~7 --- $C$ and $\Sigma$.}
+All six components; $C=1.00$.
+\[
+  \Sigma = 0.25(0.8789)+0.20(0.8920)+0.20(0.8000)
+         +0.15(0.6567)+0.10(0.6667)+0.10(0.6912)
+\]
+\[
+  \phantom{\Sigma}= 0.2197+0.1784+0.1600+0.0985+0.0667+0.0691 = 0.7924.
+\]
+
+\paragraph{Step~8 --- $Q$ and Confidence.}
+\[
+  Q = \frac{100}{1.00}\times0.7924 = 79.24 \quad (\text{grade: \textbf{good}}).
+\]
+$n_R=22$, $n_A=20$, $n_\Phi=12$, $n_\Lambda=12$, $n_E=8$ give $\rho=1$;
+$n_F=3$ gives $\rho_F=0.60$.
+\[
+  \rho = \frac{0.25+0.20+0.20+0.15+0.10(0.60)+0.10}{1.00} = 0.96,
+  \qquad \text{Confidence} = 0.96.
+\]
+
+\paragraph{Relative position.}
+\[
+  z = \frac{79.24-78.0}{8.0} = \frac{1.24}{8.0} = 0.155,
+\]
+\[
+  \text{PercentileRank} = \frac{3}{10} = 0.30 \quad (<0.35\;\Rightarrow\;\textbf{below baseline}).
+\]
+
+Despite a solid absolute score of 79.24, this session sits in the lower
+third of the user's recent history.  The dominant drag is latency
+($v_\Lambda=0.657$) and feedback ($v_F=0.667$); improving response speed
+or gathering more thumbs-up data would push the session into baseline
+territory.
+
+\begin{table}[h!]
+\centering
+\caption{Summary --- Exercise~4 solution.}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Component & $v_i$ & $w_i$ & $w_iv_i$ \\
+\midrule
+Reliability  & 0.8789 & 0.25 & 0.2197 \\
+Acceptance   & 0.8920 & 0.20 & 0.1784 \\
+Friction     & 0.8000 & 0.20 & 0.1600 \\
+Latency      & 0.6567 & 0.15 & 0.0985 \\
+Feedback     & 0.6667 & 0.10 & 0.0667 \\
+Efficiency   & 0.6912 & 0.10 & 0.0691 \\
+\midrule
+\multicolumn{3}{l}{$\Sigma$, $C$, $Q$, Confidence}
+  & $0.7924$;\; $1.00$;\; \textbf{79.24};\; $0.96$ \\
+\multicolumn{3}{l}{$z$, PercentileRank, label}
+  & $0.155$;\; $0.30$;\; below baseline \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \end{document}
