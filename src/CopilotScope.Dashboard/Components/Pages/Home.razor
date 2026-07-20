@@ -25,16 +25,19 @@
     <aside class="rail">
         <div class="rail-title">
             Sessions
-            <div class="rail-controls">
-                <label class="toggle-internal">
-                    <input type="checkbox" checked="@_showInternal" @onchange="e => ToggleShowInternalAsync((bool)e.Value!)" />
-                    Internal
-                </label>
-                <label class="toggle-internal">
-                    <input type="checkbox" checked="@_repoNormalization" @onchange="e => { _repoNormalization = (bool)e.Value!; }" />
-                    Normalize by repo
-                </label>
-            </div>
+            @if (_viewMode != ViewMode.Basic)
+            {
+                <div class="rail-controls">
+                    <label class="toggle-internal">
+                        <input type="checkbox" checked="@_showInternal" @onchange="e => ToggleShowInternalAsync((bool)e.Value!)" />
+                        Internal
+                    </label>
+                    <label class="toggle-internal">
+                        <input type="checkbox" checked="@_repoNormalization" @onchange="e => { _repoNormalization = (bool)e.Value!; }" />
+                        Normalize by repo
+                    </label>
+                </div>
+            }
         </div>
         @if (_sessions is null)
         {
@@ -93,29 +96,34 @@
                 <div class="panel-head">
                     <div>
                         <div class="panel-label">Session quality</div>
-                        <div class="vu-score @RelativeGradeClass(q, _repoNormalization)">@q.Score.ToString("0.0") <small>@QualitySubtitle(q, s.Repository, _repoNormalization)</small></div>
+                        <div class="vu-score @RelativeGradeClass(q, _repoNormalization)">@q.Score.ToString("0.0") <small>@(_viewMode == ViewMode.Basic ? $"/ 100 · {q.Grade}" : QualitySubtitle(q, s.Repository, _repoNormalization))</small></div>
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
                         @{ var status = SessionStatus(s); }
                         <span class="status-chip status-@status.Css">@status.Label</span>
-                        @if (s.EmitterKind != EmitterKind.Unknown)
+                        @if (_viewMode != ViewMode.Basic)
                         {
-                            <span class="status-chip emitter-@s.EmitterKind.ToString().ToLower()">@EmitterLabel(s.EmitterKind)</span>
-                        }
-                        @{ var maturity = SessionMaturity(s.Turns); }
-                        <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
-                        @if (_confirmDelete)
-                        {
-                            <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
-                            <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
-                        }
-                        else
-                        {
-                            <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                            @if (s.EmitterKind != EmitterKind.Unknown)
+                            {
+                                <span class="status-chip emitter-@s.EmitterKind.ToString().ToLower()">@EmitterLabel(s.EmitterKind)</span>
+                            }
+                            @{ var maturity = SessionMaturity(s.Turns); }
+                            <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
+                            @if (_confirmDelete)
+                            {
+                                <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
+                                <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+                            }
+                            else
+                            {
+                                <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                            }
                         }
                     </div>
                 </div>
+                @if (_viewMode != ViewMode.Basic)
+                {
                 <div class="maturity-timeline" title="@s.Turns turn@(s.Turns == 1 ? "" : "s") in this session">
                     <div class="maturity-stages-row">
                         @{
@@ -145,6 +153,9 @@
                     </div>
                     <div class="mat-turn-note">@s.Turns turn@(s.Turns == 1 ? "" : "s")</div>
                 </div>
+                }
+                @if (_viewMode != ViewMode.Basic)
+                {
                 <div class="vu" title="@(q.PercentileRank.HasValue && _repoNormalization ? $"Raw score {q.Score:0.0}/100 · {(int)(q.PercentileRank.Value * 100)}th percentile vs {q.HistoryCount} {(s.Repository != null ? "repo " : "")}sessions" : $"Raw score {q.Score:0.0}/100")">
                     @for (var i = 0; i < 40; i++)
                     {
@@ -184,6 +195,7 @@
                         </div>
                     }
                 </div>
+                }
             </div>
 
             @if (_viewMode != ViewMode.Basic)
