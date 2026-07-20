@@ -11,15 +11,20 @@ var postgres = builder.AddPostgres("postgres")
 var db = postgres.AddDatabase("copilotdb");
 
 // ----------------------------------------------------------------- collector
-// Fixed, unproxied port 4318 so VS Code / Copilot CLI always target
-// http://localhost:4318, regardless of Aspire's random port allocation.
+// Port defaults to 4318 (standard OTLP/HTTP). Override via appsettings or
+// environment variable when another process already holds 4318:
+//   appsettings.Development.json → "CopilotScope": { "CollectorPort": 4319 }
+//   env var                      → CopilotScope__CollectorPort=4319
+// Keep VS Code setting in sync: "github.copilot.chat.otel.otlpEndpoint": "http://localhost:<port>"
+var collectorPort = builder.Configuration.GetValue<int>("CopilotScope:CollectorPort", 4318);
+
 var collector = builder.AddProject<Projects.CopilotScope_Collector>("collector")
     .WithReference(db)
     .WaitFor(db)
     .WithEndpoint("http", e =>
     {
-        e.Port = 4318;
-        e.TargetPort = 4318;
+        e.Port = collectorPort;
+        e.TargetPort = collectorPort;
         e.IsProxied = false;
     });
 
