@@ -319,6 +319,55 @@ html, body {
 .maturity-growing     { color: #8fb8e8;       border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
 .maturity-established { color: var(--ok);     border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
 
+/* ---------------------------------------- maturity progression timeline */
+
+.maturity-timeline {
+  margin: 10px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.maturity-stages-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.mat-step {
+  display: flex; flex-direction: column; align-items: center;
+  flex: 0 0 auto; width: 80px;
+  font-family: var(--mono); cursor: default;
+}
+
+.mat-conn {
+  flex: 1; height: 2px; margin-top: 5px;
+  background: var(--line);
+  transition: background .3s;
+}
+.mat-conn.mat-conn-done { background: var(--ok); }
+
+.mat-node {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid currentColor;
+  margin-bottom: 4px;
+  transition: all .2s;
+}
+
+.mat-step-name { font-size: 10px; font-weight: 600; }
+.mat-step-range { font-size: 9px; color: var(--dim); }
+
+.mat-current { color: var(--copper); }
+.mat-current .mat-node {
+  background: var(--copper);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--copper) 22%, transparent);
+}
+
+.mat-passed { color: color-mix(in srgb, var(--ok) 70%, var(--dim)); }
+.mat-passed .mat-node { background: currentColor; }
+
+.mat-future { color: var(--dim); opacity: .35; }
+
+.mat-turn-note { font-size: 10px; color: var(--dim); margin-top: 6px; text-align: right; }
+
 /* -------------------------------------------------- model timeline strip */
 
 .model-timeline { margin: 8px 0 4px; }
