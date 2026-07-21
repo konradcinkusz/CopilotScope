@@ -87,12 +87,16 @@ dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 my
 
 Seed a whole dataset instead — a handful of sessions for a fresh local run, or a big
 varied set (different personas: clean, error-prone, laggy, rejected-edits, frustrated,
-internal helper calls, ...) for a demo/presentation. Pushes straight into a **running**
-collector via `POST /api/admin/seed`, no OTLP encoding and no restart needed; always
-clears any previously seeded data first, so re-running never piles up duplicates:
+internal helper calls, ...) for a demo/presentation. Every profile also includes a
+**showcase** session: a single 30+ turn chat engineered to light up every dashboard
+panel at once — mixed clean/stalled/error/repair-loop turns, model switching, both
+edit and feedback signals, multi-role captured content and scattered frustration.
+Pushes straight into a **running** collector via `POST /api/admin/seed`, no OTLP
+encoding and no restart needed; always clears any previously seeded data first, so
+re-running never piles up duplicates:
 
 ```bash
-# quick: ~6 sessions, for local first-run sanity checks
+# quick: ~7 sessions (incl. the showcase chat), for local first-run sanity checks
 dotnet run --project tools/CopilotScope.Seeder -- quick
 
 # demo: a big multi-day dataset for presentations (default profile)

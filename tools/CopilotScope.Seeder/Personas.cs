@@ -18,7 +18,8 @@ public sealed record Persona(
     double MinSurvivalNoRevert, double MaxSurvivalNoRevert,
     double MinSurvivalFourGram, double MaxSurvivalFourGram,
     bool Frustrated = false,
-    string? InternalPromptPrefix = null);
+    string? InternalPromptPrefix = null,
+    bool Showcase = false);
 
 public static class PersonaCatalog
 {
@@ -75,13 +76,28 @@ public static class PersonaCatalog
             MinSurvivalFourGram: 0.1, MaxSurvivalFourGram: 0.35,
             Frustrated: true),
 
-        new(Slug: "long-epic", Weight: 1, MinTurns: 10, MaxTurns: 18,
+        new(Slug: "long-epic", Weight: 1, MinTurns: 14, MaxTurns: 26,
             MinInputTokens: 2500, MaxInputTokens: 6000, MinOutputTokens: 400, MaxOutputTokens: 900,
             MinTtftMs: 400, MaxTtftMs: 1500,
             ChatErrorRate: 0.08, ToolErrorRate: 0.10,
             EditAcceptRatio: 0.75, ThumbsUpRatio: 0.65,
             MinSurvivalNoRevert: 0.55, MaxSurvivalNoRevert: 0.85,
             MinSurvivalFourGram: 0.4, MaxSurvivalFourGram: 0.75),
+
+        // The headline demo session: a single long chat (30–44 turns) engineered to exercise
+        // every dashboard panel and every analyzer at once. SessionFactory gives it real
+        // intra-session variety (per-turn moods), guaranteed editor signals (edits both
+        // accepted and rejected, thumbs up and down, LOC ±), model switching, multi-role
+        // captured content and a couple of frustrated turns. Token/survival ranges below are
+        // the session-level envelope; per-turn latency and error rates come from ShowcaseMoods.
+        new(Slug: "showcase", Weight: 1, MinTurns: 30, MaxTurns: 44,
+            MinInputTokens: 1500, MaxInputTokens: 5200, MinOutputTokens: 250, MaxOutputTokens: 850,
+            MinTtftMs: 300, MaxTtftMs: 1200, // overridden per-turn by ShowcaseMoods
+            ChatErrorRate: 0.0, ToolErrorRate: 0.0, // overridden per-turn by ShowcaseMoods
+            EditAcceptRatio: 0.62, ThumbsUpRatio: 0.6,
+            MinSurvivalNoRevert: 0.35, MaxSurvivalNoRevert: 0.9,
+            MinSurvivalFourGram: 0.25, MaxSurvivalFourGram: 0.8,
+            Showcase: true),
 
         new(Slug: "internal-title", Weight: 2, MinTurns: 1, MaxTurns: 1,
             MinInputTokens: 150, MaxInputTokens: 400, MinOutputTokens: 10, MaxOutputTokens: 30,

@@ -79,6 +79,48 @@ public class SessionFactoryTests
     }
 
     [Fact]
+    public void ShowcasePersonaIsLongVariedAndLightsUpEveryPanel()
+    {
+        var rng = new Random(11);
+        var s = SessionFactory.Build("seed-t-showcase", PersonaCatalog.Get("showcase"), DateTimeOffset.UtcNow, rng);
+
+        // At least 30 turns, as required for the demo headline chat.
+        Assert.True(s.Turns >= 30, $"expected >= 30 turns, got {s.Turns}");
+
+        // VS Code emitter with every editor-only signal present (both sides non-zero), so no tile is empty.
+        Assert.Equal(EmitterKind.VSCode, s.EmitterKind);
+        Assert.True(s.EditsAccepted > 0 && s.EditsRejected > 0);
+        Assert.True(s.ThumbsUp > 0 && s.ThumbsDown > 0);
+        Assert.True(s.LinesAdded > 0 && s.LinesRemoved > 0);
+
+        // Intra-session variety: errors, multiple models, multiple tools and multiple error types.
+        Assert.True(s.ChatErrors > 0 || s.ToolErrors > 0);
+        Assert.True(s.ModelCalls.Count > 1, "expected model switching across turns");
+        Assert.True(s.Tools.Count > 1);
+        Assert.True(s.ErrorTypes.Count >= 1);
+
+        // Every insight analyzer produces data (no "no-data" placeholder on the headline session).
+        Assert.Equal("ok", new EditSurvivalAnalyzer().Analyze(s).Status);
+        Assert.Equal("ok", new ThroughputAnalyzer().Analyze(s).Status);
+        Assert.Equal("ok", new LatencyUtilityAnalyzer().Analyze(s).Status);
+        Assert.Equal("ok", new TokenEconomicsAnalyzer(new PricingOptions()).Analyze(s).Status);
+
+        // Frustration is scattered in, so it flags on strong markers and rephrasing.
+        var frustration = new FrustrationAnalyzer().Analyze(s);
+        Assert.Equal("ok", frustration.Status);
+        Assert.Contains(frustration.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
+
+        // Latency variety: a pinned >8s stall turn is always present, so the abandonment-risk
+        // bucket in the latency-utility model is never empty.
+        Assert.Contains(s.TtftMs, t => t > 8000);
+
+        // Turn analysis is not uniformly clean — best/worst are meaningful.
+        var turns = SegmentAnalyzer.Analyze(s);
+        Assert.True(turns.Turns.Count >= 30);
+        Assert.False(turns.Turns.All(t => t.Score >= 1.0), "expected a mix of clean and friction turns");
+    }
+
+    [Fact]
     public void BuiltSessionSurvivesPersistedSessionRoundtrip()
     {
         var rng = new Random(7);
@@ -98,13 +140,22 @@ public class SessionFactoryTests
 public class SessionGeneratorTests
 {
     [Fact]
-    public void QuickSetHasSixDistinctPersonaSessions()
+    public void QuickSetHasDistinctPersonaSessionsIncludingShowcase()
     {
         var sessions = SessionGenerator.BuildQuickSet(new Random(42));
 
-        Assert.Equal(6, sessions.Count);
-        Assert.Equal(6, sessions.Select(s => s.Id).Distinct().Count());
+        Assert.Equal(7, sessions.Count);
+        Assert.Equal(sessions.Count, sessions.Select(s => s.Id).Distinct().Count());
         Assert.All(sessions, s => Assert.StartsWith("seed-quick-", s.Id));
+        Assert.Contains(sessions, s => s.Id.EndsWith("showcase"));
+    }
+
+    [Fact]
+    public void DemoSetGuaranteesAtLeastOneShowcaseSession()
+    {
+        var sessions = SessionGenerator.BuildDemoSet(new Random(42), days: 5);
+
+        Assert.Contains(sessions, s => s.Id.EndsWith("-showcase") && s.Turns >= 30);
     }
 
     [Fact]

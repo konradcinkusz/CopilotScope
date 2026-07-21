@@ -9,7 +9,7 @@ namespace CopilotScope.Seeder;
 public static class SessionGenerator
 {
     private static readonly string[] QuickSlugs =
-        ["golden", "error-prone", "laggy", "rejected-edits", "frustrated", "internal-title"];
+        ["showcase", "golden", "error-prone", "laggy", "rejected-edits", "frustrated", "internal-title"];
 
     public static List<CopilotSession> BuildQuickSet(Random rng)
     {
@@ -30,6 +30,7 @@ public static class SessionGenerator
     {
         var sessions = new List<CopilotSession>();
         var today = DateTimeOffset.UtcNow.Date;
+        var showcase = PersonaCatalog.Get("showcase");
 
         for (var day = 0; day < days; day++)
         {
@@ -42,6 +43,15 @@ public static class SessionGenerator
                 var start = dayStart.AddHours(rng.Next(0, 10)).AddMinutes(rng.Next(0, 60));
                 var id = $"seed-demo-{day:D2}-{i:D2}-{persona.Slug}";
                 sessions.Add(SessionFactory.Build(id, persona, start, rng));
+            }
+
+            // Guarantee a headline 30+ turn "everything" session every few days, on top of any
+            // the weighted picker happens to roll — presentations should never miss the one
+            // session that demonstrates every panel at once.
+            if (day % 4 == 0)
+            {
+                var start = dayStart.AddHours(rng.Next(0, 8)).AddMinutes(rng.Next(0, 60));
+                sessions.Add(SessionFactory.Build($"seed-demo-{day:D2}-showcase", showcase, start, rng));
             }
         }
 

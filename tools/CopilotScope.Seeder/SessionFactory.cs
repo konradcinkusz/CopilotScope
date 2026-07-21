@@ -18,7 +18,9 @@ public static class SessionFactory
             AgentName = "copilot",
             Repository = Fixtures.Repositories[rng.Next(Fixtures.Repositories.Length)],
             Branch = Fixtures.Branches[rng.Next(Fixtures.Branches.Length)],
-            EmitterKind = (EmitterKind)rng.Next(1, 5), // VSCode..Cursor — never Unknown
+            // The showcase session is pinned to VS Code so every editor-only signal (edits,
+            // thumbs, LOC) is present and its tiles render; other personas rotate emitters.
+            EmitterKind = persona.Showcase ? EmitterKind.VSCode : (EmitterKind)rng.Next(1, 5), // VSCode..Cursor — never Unknown
             FirstSeen = start,
         };
 
@@ -27,8 +29,11 @@ public static class SessionFactory
         var clock = start;
         var lastActivity = start;
 
-        var totalEdits = isInternal ? 0 : rng.Next(2, 11);
+        // The showcase session carries a heavier, guaranteed-mixed edit load so its
+        // acceptance/throughput tiles are populated and never all-or-nothing.
+        var totalEdits = isInternal ? 0 : persona.Showcase ? rng.Next(20, 40) : rng.Next(2, 11);
         var editsAccepted = (int)Math.Round(totalEdits * persona.EditAcceptRatio);
+        if (persona.Showcase) editsAccepted = Math.Clamp(editsAccepted, 1, totalEdits - 1); // keep both ✓ and ✗ non-zero
 
         for (var t = 0; t < turnCount; t++)
         {
@@ -36,11 +41,32 @@ public static class SessionFactory
             var turn = session.TurnFor(traceId, clock);
             var model = Fixtures.Models[rng.Next(Fixtures.Models.Length)];
 
+            // For the showcase persona, each turn adopts a "mood" that overrides latency and
+            // error rates so one long chat contains clean, stalled, error-storm and repair-loop
+            // turns. Turns 2–4 are pinned to the three interesting moods so those findings always
+            // appear; the rest are random for texture.
+            var mood = persona.Showcase
+                ? t switch
+                {
+                    2 => Fixtures.ShowcaseMoods[2], // stall (abandonment risk)
+                    3 => Fixtures.ShowcaseMoods[3], // error storm
+                    4 => Fixtures.ShowcaseMoods[4], // repair loop
+                    _ => Fixtures.ShowcaseMoods[rng.Next(Fixtures.ShowcaseMoods.Length)]
+                }
+                : null;
+
+            var minTtft = mood?.MinTtftMs ?? persona.MinTtftMs;
+            var maxTtft = mood?.MaxTtftMs ?? persona.MaxTtftMs;
+            var chatErrorRate = mood?.ChatErrorRate ?? persona.ChatErrorRate;
+            var toolErrorRate = mood?.ToolErrorRate ?? persona.ToolErrorRate;
+
             var input = rng.NextInt64(persona.MinInputTokens, persona.MaxInputTokens);
             var output = rng.NextInt64(persona.MinOutputTokens, persona.MaxOutputTokens);
             var cacheRead = (long)(input * rng.NextDouble() * 0.6);
-            var ttft = persona.MinTtftMs + rng.NextDouble() * (persona.MaxTtftMs - persona.MinTtftMs);
-            var isChatError = rng.NextDouble() < persona.ChatErrorRate;
+            var ttft = minTtft + rng.NextDouble() * (maxTtft - minTtft);
+            // Turn 3 of the showcase is the pinned error-storm turn — force a chat error so the
+            // error-type breakdown panel is always populated on the headline demo session.
+            var isChatError = rng.NextDouble() < chatErrorRate || (persona.Showcase && t == 3);
             var chatDurationMs = ttft + 200 + rng.Next(1500);
 
             session.ChatCalls++;
@@ -82,12 +108,16 @@ public static class SessionFactory
             session.AddEvent(new SessionEvent(clock, "chat",
                 $"chat {model} · {input}→{output} tok · {chatDurationMs:F0} ms{(isChatError ? " · ERROR" : "")}"));
 
-            var toolCount = isInternal ? 0 : rng.Next(0, 4);
+            var toolCount = isInternal ? 0
+                : mood is not null ? rng.Next(mood.MinTools, mood.MaxTools + 1)
+                : rng.Next(0, 4);
             var toolClock = clock.AddSeconds(1 + rng.Next(3));
             for (var k = 0; k < toolCount; k++)
             {
                 var tool = Fixtures.Tools[rng.Next(Fixtures.Tools.Length)];
-                var isToolError = rng.NextDouble() < persona.ToolErrorRate;
+                // Turn 4 of the showcase is the pinned repair-loop turn — force its first tool to
+                // fail so the repair-loop signature and tool-error markers reliably appear.
+                var isToolError = rng.NextDouble() < toolErrorRate || (persona.Showcase && t == 4 && k == 0);
                 var toolMs = 40 + rng.Next(1600);
 
                 session.ToolCalls++;
@@ -117,13 +147,24 @@ public static class SessionFactory
         {
             session.EditsAccepted = editsAccepted;
             session.EditsRejected = totalEdits - editsAccepted;
-            session.LinesAdded = rng.Next(10, 200);
-            session.LinesRemoved = rng.Next(0, (int)session.LinesAdded / 2 + 1);
+            session.LinesAdded = persona.Showcase ? rng.Next(80, 340) : rng.Next(10, 200);
+            session.LinesRemoved = persona.Showcase
+                ? rng.Next(15, (int)session.LinesAdded / 2 + 2)  // always some churn to show
+                : rng.Next(0, (int)session.LinesAdded / 2 + 1);
 
-            var totalFeedback = rng.Next(0, 3);
-            var up = (int)Math.Round(totalFeedback * persona.ThumbsUpRatio);
-            session.ThumbsUp = up;
-            session.ThumbsDown = totalFeedback - up;
+            if (persona.Showcase)
+            {
+                // Guarantee both 👍 and 👎 so the feedback tile shows a mixed signal.
+                session.ThumbsUp = rng.Next(3, 8);
+                session.ThumbsDown = rng.Next(1, 4);
+            }
+            else
+            {
+                var totalFeedback = rng.Next(0, 3);
+                var up = (int)Math.Round(totalFeedback * persona.ThumbsUpRatio);
+                session.ThumbsUp = up;
+                session.ThumbsDown = totalFeedback - up;
+            }
 
             for (var s = 0; s < turnCount; s++)
             {
@@ -154,6 +195,30 @@ public static class SessionFactory
             var pick = Fixtures.FrustratedTurns[Math.Min(turnIndex, Fixtures.FrustratedTurns.Length - 1)];
             return (pick.Prompt, pick.Response);
         }
+
+        if (persona.Showcase)
+            return PickShowcaseText(turnIndex, turnCount, rng);
+
+        var t = Fixtures.Turns[rng.Next(Fixtures.Turns.Length)];
+        return (t.Prompt, t.Response);
+    }
+
+    /// <summary>Text plan for the showcase session: two scattered frustration blocks (a
+    /// strong-marker pair, then a rephrasing pair so the FrustrationAnalyzer lights up on
+    /// both signals), periodic multi-role captured content so the chat view shows
+    /// system/tool bubbles, and ordinary engineering turns everywhere else.</summary>
+    private static (string? Prompt, string? Response) PickShowcaseText(int turnIndex, int turnCount, Random rng)
+    {
+        var strongAt = turnCount / 4;        // e.g. turn ~8 of 32
+        var rephraseAt = turnCount * 2 / 3;  // e.g. turn ~21 of 32
+
+        if (turnIndex == strongAt)       return Fixtures.FrustratedTurns[0]; // "still doesn't work"
+        if (turnIndex == strongAt + 1)   return Fixtures.FrustratedTurns[1]; // "Wrong again!!"
+        if (turnIndex == rephraseAt)     return Fixtures.FrustratedTurns[2]; // "Please add a retry policy…"
+        if (turnIndex == rephraseAt + 1) return Fixtures.FrustratedTurns[3]; // near-identical rephrasing
+
+        if (turnIndex % 5 == 2)
+            return Fixtures.RichTurns[(turnIndex / 5) % Fixtures.RichTurns.Length];
 
         var t = Fixtures.Turns[rng.Next(Fixtures.Turns.Length)];
         return (t.Prompt, t.Response);
