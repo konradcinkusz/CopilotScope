@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reuses CopilotSession/PersistedSession/SeedRequest directly so the seeded
+         shape can never drift from what real ingestion produces. -->
+    <ProjectReference Include="..\..\src\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+  </ItemGroup>
+</Project>

@@ -210,6 +210,48 @@ api.MapDelete("/sessions/{id}", async (string id, ILogger<Program> logger) =>
 
 api.MapGet("/overview", () => Results.Ok(DtoOverview.Build(store.All, quality)));
 
+// ------------------------------------------------------------ admin / seeding
+// Lets tools/CopilotScope.Seeder push a local-dev or demo dataset straight into
+// a running collector — no Postgres network access and no restart required.
+// Shares the ingest API key: anyone who can already post fake OTLP telemetry
+// can fabricate session data too, so this doesn't widen the trust boundary.
+// Seeded rows are namespaced under the "seed-" id prefix so a reset never
+// touches real captured sessions.
+const string SeedIdPrefix = "seed-";
+
+api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<Program> logger) =>
+{
+    if (!string.IsNullOrEmpty(ingestApiKey))
+    {
+        var provided = request.Headers["x-api-key"].FirstOrDefault()
+                    ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
+        if (provided != ingestApiKey) return Results.Unauthorized();
+    }
+
+    var repo = app.Services.GetService<SessionRepository>();
+
+    if (req.Reset)
+    {
+        var removedMemory = store.RemoveWhere(id => id.StartsWith(SeedIdPrefix, StringComparison.Ordinal));
+        var removedDb = repo is not null ? await repo.DeleteByPrefixAsync(SeedIdPrefix, CancellationToken.None) : 0;
+        logger.LogInformation("Seed reset: cleared {Memory} in-memory / {Db} Postgres seed session(s).", removedMemory, removedDb);
+    }
+
+    foreach (var persisted in req.Sessions)
+    {
+        var session = persisted.ToSession();
+        store.Put(session);
+        if (repo is not null)
+        {
+            var report = quality.Evaluate(session);
+            await repo.UpsertAsync(persisted, report.Score, report.Grade, CancellationToken.None);
+        }
+    }
+
+    logger.LogInformation("Seeded {Count} session(s) (reset={Reset}).", req.Sessions.Count, req.Reset);
+    return Results.Ok(new { seeded = req.Sessions.Count, reset = req.Reset });
+});
+
 api.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
@@ -222,7 +264,7 @@ api.MapGet("/health", () => Results.Ok(new
 app.MapGet("/", () => Results.Text(
     "CopilotScope collector.\n" +
     "OTLP ingest: POST /v1/traces | /v1/metrics | /v1/logs\n" +
-    "API: GET /api/sessions | /api/sessions/{id} | /api/health\n" +
+    "API: GET /api/sessions | /api/sessions/{id} | /api/health | POST /api/admin/seed\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
 app.Logger.LogInformation(
