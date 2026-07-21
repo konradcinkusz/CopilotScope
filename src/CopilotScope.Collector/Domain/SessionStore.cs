@@ -45,6 +45,18 @@ public sealed class SessionStore
         return added;
     }
 
+    /// <summary>Inserts or replaces a session unconditionally (used by admin seeding — unlike
+    /// <see cref="Rehydrate"/>'s add-if-absent semantics, a reseed must overwrite stale data).</summary>
+    public void Put(CopilotSession session) => _sessions[session.Id] = session;
+
+    /// <summary>Removes every session whose id matches the predicate. Returns the count removed.</summary>
+    public int RemoveWhere(Func<string, bool> predicate)
+    {
+        var ids = _sessions.Keys.Where(predicate).ToList();
+        foreach (var id in ids) Remove(id);
+        return ids.Count;
+    }
+
     /// <summary>Removes a session and its trace mappings. Returns true if it existed.</summary>
     public bool Remove(string id)
     {

@@ -178,6 +178,13 @@ Work through these in order — they cover, in practice, every case we've seen:
    `dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 probe`
    — if `probe` shows up on the dashboard, CopilotScope is healthy and the issue
    is purely client configuration.
+11. **Want a populated dashboard instead of one probe session?** Run
+   `dotnet run --project tools/CopilotScope.Seeder -- demo` — it builds a big,
+   varied set of comprehensive sessions (clean, error-prone, laggy,
+   rejected-edits, frustrated, internal helper calls, ...) and posts them
+   straight to the running collector's `/api/admin/seed`. It always clears any
+   previously seeded data first, so it's safe to re-run against a container
+   that's already up (no restart needed).
 
 ## 9. Privacy note
 

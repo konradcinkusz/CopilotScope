@@ -28,6 +28,11 @@ dotnet run --project src/CopilotScope.AppHost
 
 # send synthetic telemetry to see data immediately
 dotnet run --project tools/CopilotScope.TelemetryGen
+
+# or seed a whole dataset straight into the running collector (always clears
+# previously seeded data first, so this is safe to re-run at any time):
+dotnet run --project tools/CopilotScope.Seeder -- quick   # ~6 sessions, fast
+dotnet run --project tools/CopilotScope.Seeder -- demo    # big varied set, for demos
 ```
 
 ## Running tests
@@ -49,6 +54,7 @@ tests/
   CopilotScope.Tests/         xUnit tests — decoder, routing, quality, persistence
 tools/
   CopilotScope.TelemetryGen/  realistic demo telemetry generator
+  CopilotScope.Seeder/        seeds a comprehensive session dataset into a running collector
 ```
 
 ## Submitting changes

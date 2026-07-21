@@ -1,7 +1,13 @@
 using CopilotScope.Collector.Domain;
+using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Quality;
 
 namespace CopilotScope.Collector.Api;
+
+/// <summary>Payload for POST /api/admin/seed (tools/CopilotScope.Seeder). Sessions are full
+/// <see cref="PersistedSession"/> snapshots — the same shape the collector itself writes —
+/// so seeding never drifts from what real ingestion produces.</summary>
+public sealed record SeedRequest(bool Reset, List<PersistedSession> Sessions);
 
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,

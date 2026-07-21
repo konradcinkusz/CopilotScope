@@ -30,6 +30,7 @@ VS Code / Copilot CLI     │  Collector :4318 ──▶ Postgres (container + v
 | `src/CopilotScope.Dashboard` | Blazor Server UI: sessions, quality VU-meter, turn analysis, prompt transcript, delete | **zero** |
 | `tests/CopilotScope.Tests` | xUnit unit tests (decoder, routing, quality, turns, persistence roundtrip) | xunit |
 | `tools/CopilotScope.TelemetryGen` | realistic demo telemetry generator (incl. gzip + captured content) | zero |
+| `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
 
 ## Quick start — no clone, just pull
 
@@ -73,10 +74,25 @@ including CLI and troubleshooting: **docs/TUTORIAL.md**):
 }
 ```
 
-Demo without Copilot:
+Demo without Copilot — one realistic session played over real OTLP/HTTP (exercises the
+actual ingest/decoder path):
 
 ```bash
 dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 my-session
+```
+
+Seed a whole dataset instead — a handful of sessions for a fresh local run, or a big
+varied set (different personas: clean, error-prone, laggy, rejected-edits, frustrated,
+internal helper calls, ...) for a demo/presentation. Pushes straight into a **running**
+collector via `POST /api/admin/seed`, no OTLP encoding and no restart needed; always
+clears any previously seeded data first, so re-running never piles up duplicates:
+
+```bash
+# quick: ~6 sessions, for local first-run sanity checks
+dotnet run --project tools/CopilotScope.Seeder -- quick
+
+# demo: a big multi-day dataset for presentations (default profile)
+dotnet run --project tools/CopilotScope.Seeder -- demo http://localhost:4318 --days 14
 ```
 
 Tests:
@@ -97,6 +113,12 @@ Write path: ingest marks sessions dirty, `PersistenceWriter` upserts them once
 per second (telemetry bursts ≠ write storms). On startup the collector
 **rehydrates** sessions from the database. A Postgres outage degrades to
 in-memory and never blocks ingest.
+
+`POST /api/admin/seed` takes the same route into a **running** collector:
+`tools/CopilotScope.Seeder` builds full session snapshots and posts them there
+directly, so seeding never needs a database connection of its own or a restart
+to show up. Seeded rows are namespaced under the `seed-` id prefix, so a reset
+(`{"reset": true}`, the seeder's default) only ever clears its own data.
 
 **What about full chat content?** By default Copilot sends metadata only. With
 `captureContent` enabled, prompt/response text arrives in span attributes and

@@ -80,5 +80,14 @@ public sealed class SessionRepository(string connectionString) : IAsyncDisposabl
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>Bulk-deletes rows whose id starts with the given prefix — used to clear a
+    /// previously seeded demo/local dataset before writing a fresh one.</summary>
+    public async Task<int> DeleteByPrefixAsync(string prefix, CancellationToken ct)
+    {
+        await using var cmd = _dataSource.CreateCommand("DELETE FROM sessions WHERE id LIKE $1;");
+        cmd.Parameters.AddWithValue(prefix + "%");
+        return await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
 }

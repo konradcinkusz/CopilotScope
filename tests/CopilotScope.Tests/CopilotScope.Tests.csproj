@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\..\tools\CopilotScope.Seeder\CopilotScope.Seeder.csproj" />
   </ItemGroup>
 
   <ItemGroup>
