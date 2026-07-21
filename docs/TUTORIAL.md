@@ -28,6 +28,13 @@ options (`--mode compose|aspire|skip-start`, `--claude-code`,
 the wizard only prints the snippet — you still edit `settings.json` and reload
 the window (step 2 below explains why that step can't be automated).
 
+CLI env vars (`--copilot-cli` / `--claude-code`) only live in the shell you
+sourced the wizard in — add `--persist` (`-Persist` on Windows) to also write
+them to your shell rc file (`~/.zshrc`/`~/.bashrc`, auto-detected) or the
+Windows User environment scope, so new terminals pick them up without
+re-running anything. Safe to re-run — it replaces its own block instead of
+duplicating.
+
 The rest of this document is the manual walkthrough the wizard automates —
 useful if you want to understand each step, configure a surface the wizard
 doesn't cover yet, or troubleshoot (section 8).

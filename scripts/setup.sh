@@ -19,6 +19,12 @@
 #   --endpoint URL                     OTLP endpoint (default: http://localhost:4318)
 #   --api-key KEY                      x-api-key for ingest auth
 #                                       (default: dev-secret-123 in --mode compose, matching docker-compose.yml)
+#   --persist                          Also append the CLI env vars to your shell rc file
+#                                       (~/.zshrc or ~/.bashrc, auto-detected) so new terminals
+#                                       pick them up without re-sourcing this script.
+#                                       Requires --copilot-cli and/or --claude-code. Safe to
+#                                       re-run — replaces its own marked block, doesn't duplicate.
+#   --rc-file PATH                     Override the rc file used by --persist
 #   --skip-verify                      Skip the TelemetryGen smoke test
 #   --health-timeout SECONDS           How long to wait for the collector (default: 60)
 #   -h, --help                         Show this help
@@ -26,6 +32,7 @@
 # Examples:
 #   ./scripts/setup.sh
 #   source ./scripts/setup.sh --copilot-cli --capture-content
+#   source ./scripts/setup.sh --copilot-cli --persist
 #   ./scripts/setup.sh --mode aspire --skip-verify
 #   ./scripts/setup.sh --mode skip-start --endpoint https://copilotscope.example.com --api-key "$SCOPE_KEY"
 #
@@ -48,6 +55,8 @@ CAPTURE=""
 ENDPOINT="http://localhost:4318"
 API_KEY=""
 API_KEY_SET=""
+PERSIST=""
+RC_FILE=""
 SKIP_VERIFY=""
 HEALTH_TIMEOUT=60
 
@@ -64,9 +73,14 @@ while [[ $# -gt 0 ]]; do
         --capture-content)  CAPTURE="true"; shift ;;
         --endpoint)         ENDPOINT="$2"; shift 2 ;;
         --api-key)          API_KEY="$2"; API_KEY_SET="true"; shift 2 ;;
+        --persist)          PERSIST="true"; shift ;;
+        --rc-file)          RC_FILE="$2"; shift 2 ;;
         --skip-verify)      SKIP_VERIFY="true"; shift ;;
         --health-timeout)   HEALTH_TIMEOUT="$2"; shift 2 ;;
-        -h|--help)          sed -n '2,32p' "$SCRIPT_PATH"; if [ "$IS_SOURCED" -eq 0 ]; then return 0; else exit 0; fi ;;
+        -h|--help)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$SCRIPT_PATH"
+            if [ "$IS_SOURCED" -eq 0 ]; then return 0; else exit 0; fi
+            ;;
         *) echo "Unknown option: $1" >&2; shift ;;
     esac
 done
@@ -80,9 +94,39 @@ if [ -z "$API_KEY_SET" ] && [ "$MODE" = "compose" ]; then
     API_KEY="dev-secret-123"   # matches docker-compose.yml's CopilotScope__Ingest__ApiKey
 fi
 
+if [ -n "$PERSIST" ] && [ -z "$COPILOT_CLI" ] && [ -z "$CLAUDE_CODE" ]; then
+    echo "--persist has no effect without --copilot-cli and/or --claude-code." >&2
+fi
+
 if ! command -v curl >/dev/null 2>&1; then
     _die "curl is required by this script." || return 1
 fi
+
+_default_rc_file() {
+    case "$(basename "${SHELL:-/bin/bash}")" in
+        zsh) echo "$HOME/.zshrc" ;;
+        *)   echo "$HOME/.bashrc" ;;
+    esac
+}
+
+# Replaces the marked block for $2 in rc file $1 with $3 (idempotent — safe to re-run).
+_persist_block() {
+    local rc="$1" marker="$2" content="$3"
+    local begin="# >>> CopilotScope ($marker) >>>"
+    local end="# <<< CopilotScope ($marker) <<<"
+    touch "$rc"
+    awk -v b="$begin" -v e="$end" '
+        $0==b {skip=1}
+        skip!=1 {print}
+        $0==e {skip=0}
+    ' "$rc" > "$rc.copilotscope.tmp" && mv "$rc.copilotscope.tmp" "$rc"
+    {
+        echo ""
+        echo "$begin"
+        printf '%s\n' "$content" | grep -v '^$'
+        echo "$end"
+    } >> "$rc"
+}
 
 echo "=== CopilotScope setup ==="
 echo ""
@@ -158,6 +202,26 @@ if [ -n "$COPILOT_CLI" ]; then
         export OTEL_EXPORTER_OTLP_HEADERS="x-api-key=$API_KEY"
     fi
     echo "Copilot CLI OTel env vars exported into this shell. Run 'copilot' from THIS terminal."
+
+    if [ -n "$PERSIST" ]; then
+        target_rc="${RC_FILE:-$(_default_rc_file)}"
+        block=$(cat <<BLOCK
+export COPILOT_OTEL_ENABLED=true
+export COPILOT_OTEL_EXPORTER_TYPE=otlp-http
+export OTEL_EXPORTER_OTLP_ENDPOINT="$ENDPOINT"
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf
+$( [ -n "$CAPTURE" ] && echo 'export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true' )
+$( [ -n "$API_KEY" ] && echo "export OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=$API_KEY\"" )
+BLOCK
+)
+        _persist_block "$target_rc" "copilot-cli" "$block"
+        echo "Persisted to $target_rc — new terminals will have it automatically"
+        echo "(this one already does; run 'source $target_rc' elsewhere, or open a new terminal)."
+        [ -n "$API_KEY" ] && echo "Note: this stores the API key in plaintext in $target_rc."
+    fi
     echo ""
 fi
 
@@ -166,6 +230,24 @@ if [ -n "$CLAUDE_CODE" ]; then
     [ -n "$CAPTURE" ] && claude_args+=(--capture)
     [ -n "$API_KEY" ] && claude_args+=(--api-key "$API_KEY")
     source "$SCRIPT_DIR/Enable-ClaudeCodeOtel.sh" "${claude_args[@]}"
+
+    if [ -n "$PERSIST" ]; then
+        target_rc="${RC_FILE:-$(_default_rc_file)}"
+        block=$(cat <<BLOCK
+export OTEL_EXPORTER_OTLP_ENDPOINT="$ENDPOINT"
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf
+$( [ -n "$CAPTURE" ] && echo 'export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true' )
+$( [ -n "$API_KEY" ] && echo "export OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=$API_KEY\"" )
+BLOCK
+)
+        _persist_block "$target_rc" "claude-code" "$block"
+        echo "Persisted to $target_rc — new terminals will have it automatically"
+        echo "(this one already does; run 'source $target_rc' elsewhere, or open a new terminal)."
+        [ -n "$API_KEY" ] && echo "Note: this stores the API key in plaintext in $target_rc."
+    fi
     echo ""
 fi
 

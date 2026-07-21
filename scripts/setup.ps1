@@ -30,6 +30,11 @@
     x-api-key for ingest auth. Defaults to 'dev-secret-123' when -Mode compose
     (matching docker-compose.yml); otherwise unset.
 
+.PARAMETER Persist
+    Also store the CLI env vars at User scope (via Enable-CopilotOtel.ps1 /
+    Enable-ClaudeCodeOtel.ps1 -Persist) so new terminals pick them up without
+    re-running this script. Requires -CopilotCli and/or -ClaudeCode.
+
 .PARAMETER SkipVerify
     Skip the TelemetryGen smoke test.
 
@@ -41,6 +46,9 @@
 
 .EXAMPLE
     .\setup.ps1 -CopilotCli -CaptureContent
+
+.EXAMPLE
+    .\setup.ps1 -CopilotCli -Persist
 
 .EXAMPLE
     .\setup.ps1 -Mode aspire -SkipVerify
@@ -57,9 +65,14 @@ param(
     [switch] $CaptureContent,
     [string] $Endpoint = 'http://localhost:4318',
     [string] $ApiKey,
+    [switch] $Persist,
     [switch] $SkipVerify,
     [int] $HealthTimeoutSeconds = 60
 )
+
+if ($Persist -and -not $CopilotCli -and -not $ClaudeCode) {
+    Write-Warning "-Persist has no effect without -CopilotCli and/or -ClaudeCode."
+}
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
@@ -124,6 +137,7 @@ if ($CopilotCli) {
     $cliArgs = @('-Endpoint', $Endpoint)
     if ($CaptureContent) { $cliArgs += '-CaptureContent' }
     if ($ApiKey) { $cliArgs += @('-ApiKey', $ApiKey) }
+    if ($Persist) { $cliArgs += '-Persist' }
     & (Join-Path $PSScriptRoot 'Enable-CopilotOtel.ps1') @cliArgs
     Write-Host ""
 }
@@ -132,6 +146,7 @@ if ($ClaudeCode) {
     $claudeArgs = @('-Endpoint', $Endpoint)
     if ($CaptureContent) { $claudeArgs += '-CaptureContent' }
     if ($ApiKey) { $claudeArgs += @('-ApiKey', $ApiKey) }
+    if ($Persist) { $claudeArgs += '-Persist' }
     & (Join-Path $PSScriptRoot 'Enable-ClaudeCodeOtel.ps1') @claudeArgs
     Write-Host ""
 }
