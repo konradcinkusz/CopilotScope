@@ -4,6 +4,41 @@ Step-by-step configuration for every Copilot surface that can emit OpenTelemetry
 plus troubleshooting for the most common "everything starts but no sessions appear"
 situations.
 
+## 0. Fastest path: the setup wizard
+
+`scripts/setup.sh` / `scripts/setup.ps1` chain everything below into one command:
+start the stack, wait for it to be healthy, optionally export CLI env vars into
+your current shell, print the exact VS Code snippet for your endpoint/key, and
+run a smoke test to confirm telemetry actually reaches the collector.
+
+```bash
+# macOS / Linux — source it if you want Copilot CLI / Claude Code env vars
+# exported into THIS shell (export only survives in the sourcing shell):
+source ./scripts/setup.sh --copilot-cli
+```
+
+```powershell
+# Windows — env vars land in the current session either way
+.\scripts\setup.ps1 -CopilotCli
+```
+
+Run `./scripts/setup.sh --help` / `Get-Help .\scripts\setup.ps1 -Full` for all
+options (`--mode compose|aspire|skip-start`, `--claude-code`,
+`--capture-content`, `--endpoint`, `--api-key`, `--skip-verify`). For VS Code,
+the wizard only prints the snippet — you still edit `settings.json` and reload
+the window (step 2 below explains why that step can't be automated).
+
+CLI env vars (`--copilot-cli` / `--claude-code`) only live in the shell you
+sourced the wizard in — add `--persist` (`-Persist` on Windows) to also write
+them to your shell rc file (`~/.zshrc`/`~/.bashrc`, auto-detected) or the
+Windows User environment scope, so new terminals pick them up without
+re-running anything. Safe to re-run — it replaces its own block instead of
+duplicating.
+
+The rest of this document is the manual walkthrough the wizard automates —
+useful if you want to understand each step, configure a surface the wizard
+doesn't cover yet, or troubleshoot (section 8).
+
 ## 1. Start CopilotScope
 
 Pick one of two ways to run it — both expose the same two things: an OTLP ingest
