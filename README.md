@@ -13,6 +13,10 @@ Observability for **GitHub Copilot** chat sessions: an OpenTelemetry collector, 
 Postgres store and a Blazor dashboard with a real-time session quality score —
 orchestrated with **.NET Aspire**.
 
+**Fastest setup:** `source ./scripts/setup.sh --copilot-cli` (or `.\scripts\setup.ps1 -CopilotCli`
+on Windows) starts the stack, configures a client, and smoke-tests the pipeline
+in one command — see **docs/TUTORIAL.md §0**.
+
 ```
                           ┌───────────────── .NET Aspire AppHost ─────────────────┐
 VS Code / Copilot CLI     │  Collector :4318 ──▶ Postgres (container + volume)    │
@@ -180,6 +184,11 @@ clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 ```powershell
 .\scripts\Enable-CopilotOtel.ps1                  # metadata only
 .\scripts\Enable-CopilotOtel.ps1 -CaptureContent  # + prompt/response content
+copilot                                           # run from the SAME terminal
+```
+
+```bash
+source ./scripts/setup.sh --copilot-cli           # macOS / Linux: starts the stack too
 copilot                                           # run from the SAME terminal
 ```
 
