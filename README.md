@@ -91,12 +91,16 @@ internal helper calls, ...) for a demo/presentation. Every profile also includes
 **showcase** session: a single 30+ turn chat engineered to light up every dashboard
 panel at once — mixed clean/stalled/error/repair-loop turns, model switching, both
 edit and feedback signals, multi-role captured content and scattered frustration.
+On top of that, every profile seeds a set of **curated real conversations** —
+hand-authored 30+ turn sessions that read like genuine developer chats (building a
+Redis rate limiter, debugging a production OTLP incident on the CLI, shipping a React
+search feature) so the transcript view shows a coherent story, not sample lines.
 Pushes straight into a **running** collector via `POST /api/admin/seed`, no OTLP
 encoding and no restart needed; always clears any previously seeded data first, so
 re-running never piles up duplicates:
 
 ```bash
-# quick: ~7 sessions (incl. the showcase chat), for local first-run sanity checks
+# quick: ~10 sessions (showcase + curated long chats), for local first-run sanity checks
 dotnet run --project tools/CopilotScope.Seeder -- quick
 
 # demo: a big multi-day dataset for presentations (default profile)
