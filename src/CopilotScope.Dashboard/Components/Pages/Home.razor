@@ -4,12 +4,12 @@
 
 <header class="topbar">
     <h1 class="brand">Copilot<span>Scope</span></h1>
-    <nav class="nav">
-        <a href="/" class="active">Sessions</a>
+    <nav class="nav" aria-label="Main">
+        <a href="/" class="active" aria-current="page">Sessions</a>
         <a href="/overview">Overview</a>
         <a href="/docs">Docs</a>
     </nav>
-    <div class="conn @(_health is null ? "down" : "up")">
+    <div class="conn @(_health is null ? "down" : "up")" role="status" aria-live="polite">
         @if (_health is null)
         {
             <text>collector unreachable</text>
@@ -24,7 +24,7 @@
 <div class="grid">
     <aside class="rail">
         <div class="rail-title">
-            Sessions
+            <span>Sessions @if (_sessions is { Count: > 0 }) { <em class="rail-count">@FilteredSessions.Count</em> }</span>
             @if (_viewMode != ViewMode.Basic)
             {
                 <div class="rail-controls">
@@ -33,12 +33,22 @@
                         Internal
                     </label>
                     <label class="toggle-internal">
-                        <input type="checkbox" checked="@_repoNormalization" @onchange="e => { _repoNormalization = (bool)e.Value!; }" />
+                        <input type="checkbox" checked="@_repoNormalization" @onchange="e => SetRepoNormalizationAsync((bool)e.Value!)" />
                         Normalize by repo
                     </label>
                 </div>
             }
         </div>
+
+        @if (_sessions is { Count: > 0 })
+        {
+            <div class="rail-search">
+                <input type="search" placeholder="Filter by id, repo or branch…" aria-label="Filter sessions"
+                       value="@_filter" @oninput="e => _filter = e.Value?.ToString() ?? string.Empty" />
+            </div>
+        }
+
+        <div class="rail-list">
         @if (_sessions is null)
         {
             <div class="empty">Connecting to the collector…</div>
@@ -51,14 +61,20 @@
                 See <a href="/docs#sources">Docs → Supported sources</a> for setup instructions.
             </div>
         }
+        else if (FilteredSessions.Count == 0)
+        {
+            <div class="empty">No session matches “@_filter”.</div>
+        }
         else
         {
-            @foreach (var s in _sessions)
+            @foreach (var s in FilteredSessions)
             {
                 var ri = RepoColorIndex(s.Repository);
-                <button class="session @(s.Id == _selectedId ? "active" : "") @(ri >= 0 ? $"repo-l{ri}" : "")" @onclick="() => SelectAsync(s.Id)">
+                var status = SessionStatus(s);
+                <button class="session @(s.Id == _selectedId ? "active" : "") @(ri >= 0 ? $"repo-l{ri}" : "")"
+                        aria-pressed="@(s.Id == _selectedId)" @onclick="() => SelectAsync(s.Id)">
                     <span class="session-id">
-                        <span class="dot status-dot-@SessionStatus(s).Css" title="@SessionStatus(s).Label"></span>
+                        <span class="dot status-dot-@status.Css" title="@status.Label"></span>
                         @s.Id
                         @if (s.Kind != SessionKind.UserChat)
                         {
@@ -73,23 +89,28 @@
                 </button>
             }
         }
+        </div>
     </aside>
 
     <section class="main">
         @if (_detail is null)
         {
-            <div class="empty big">Pick a session from the list — details and the quality score will appear here.</div>
+            <div class="empty big">
+                <div class="empty-title">No session selected</div>
+                Pick one from the list on the left. You'll get its quality score, what drove it,
+                and — under <b>Advanced</b> — per-turn analysis, tool usage and the live event feed.
+            </div>
         }
         else
         {
             var s = _detail.Summary;
             var q = s.Quality;
 
-            <div class="view-mode-row">
+            <div class="view-mode-row" role="radiogroup" aria-label="Detail level">
                 <span class="view-mode-label">View:</span>
-                <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" title="Session quality score only" @onclick="() => _viewMode = ViewMode.Basic">Basic</button>
-                <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" title="All panels — only tiles with actual data" @onclick="() => _viewMode = ViewMode.Advanced">Advanced</button>
-                <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" title="All panels including no-data placeholders" @onclick="() => _viewMode = ViewMode.Full">Full</button>
+                <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Basic)"    title="The headline verdict — score, what's driving it, key counts" @onclick="() => SetViewModeAsync(ViewMode.Basic)">Basic</button>
+                <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Advanced)" title="All panels — only tiles with actual data" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Advanced</button>
+                <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Full)"     title="All panels including no-data placeholders" @onclick="() => SetViewModeAsync(ViewMode.Full)">Full</button>
             </div>
 
             <div class="panel vu-panel">
@@ -104,13 +125,13 @@
                         <span class="status-chip status-@status.Css">@status.Label</span>
                         @if (_viewMode != ViewMode.Basic)
                         {
-                            @if (s.EmitterKind != EmitterKind.Unknown)
+                            if (s.EmitterKind != EmitterKind.Unknown)
                             {
                                 <span class="status-chip emitter-@s.EmitterKind.ToString().ToLower()">@EmitterLabel(s.EmitterKind)</span>
                             }
-                            @{ var maturity = SessionMaturity(s.Turns); }
+                            var maturity = SessionMaturity(s.Turns);
                             <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
-                            @if (_confirmDelete)
+                            if (_confirmDelete)
                             {
                                 <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
                                 <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
@@ -122,6 +143,80 @@
                         }
                     </div>
                 </div>
+
+                @* ---- Basic view: the whole story on one screen, no scrolling required ---- *@
+                @if (_viewMode == ViewMode.Basic)
+                {
+                    <div class="basic-meter">
+                        <div class="basic-track" role="img" aria-label="Quality score @q.Score.ToString("0.0") out of 100, grade @q.Grade">
+                            <span class="basic-zone-tick" style="left:40%"></span>
+                            <span class="basic-zone-tick" style="left:55%"></span>
+                            <span class="basic-zone-tick" style="left:70%"></span>
+                            <span class="basic-zone-tick" style="left:85%"></span>
+                            <span class="basic-fill @RelativeGradeClass(q, _repoNormalization)" style="width:@(Pct(q.Score / 100))%"></span>
+                        </div>
+                        <div class="basic-zones" aria-hidden="true">
+                            <span style="flex:40">critical</span>
+                            <span style="flex:15">poor</span>
+                            <span style="flex:15">fair</span>
+                            <span style="flex:15">good</span>
+                            <span style="flex:15">excellent</span>
+                        </div>
+                    </div>
+
+                    <p class="basic-verdict">
+                        <span class="dot dot-@GradeDotClass(q.Grade)"></span>@BasicVerdict(q)
+                    </p>
+
+                    var weakest = WorstComponent(q);
+                    var strongest = BestComponent(q);
+                    if (weakest is not null || strongest is not null)
+                    {
+                        <div class="basic-drivers">
+                            @if (weakest is not null)
+                            {
+                                <div class="basic-driver d-@TrafficClass(weakest)">
+                                    <div class="basic-driver-head">
+                                        <span><span class="dot dot-@TrafficClass(weakest)"></span>Holding it back — <b>@weakest.Name</b></span>
+                                        <span>@((weakest.Value * 100).ToString("0"))</span>
+                                    </div>
+                                    <div class="bar"><span style="width:@(Pct(weakest.Value))%"></span></div>
+                                    <div class="component-detail">@weakest.Detail</div>
+                                </div>
+                            }
+                            @if (strongest is not null)
+                            {
+                                <div class="basic-driver d-@TrafficClass(strongest)">
+                                    <div class="basic-driver-head">
+                                        <span><span class="dot dot-@TrafficClass(strongest)"></span>Working well — <b>@strongest.Name</b></span>
+                                        <span>@((strongest.Value * 100).ToString("0"))</span>
+                                    </div>
+                                    <div class="bar"><span style="width:@(Pct(strongest.Value))%"></span></div>
+                                    <div class="component-detail">@strongest.Detail</div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="basic-stats">
+                        <div class="basic-stat"><b>@s.Turns</b><span>turns</span></div>
+                        <div class="basic-stat"><b>@s.ChatCalls<i>@(s.ChatErrors > 0 ? $" ({s.ChatErrors}✗)" : "")</i></b><span>LLM calls</span></div>
+                        <div class="basic-stat"><b>@s.ToolCalls<i>@(s.ToolErrors > 0 ? $" ({s.ToolErrors}✗)" : "")</i></b><span>tool calls</span></div>
+                        <div class="basic-stat"><b>@FmtTokens(s.InputTokens + s.OutputTokens)</b><span>tokens</span></div>
+                        <div class="basic-stat"><b>@Duration(s)</b><span>duration</span></div>
+                    </div>
+
+                    <div class="basic-context">
+                        <span>@(RepoShortName(s.Repository) ?? "no repo")</span>
+                        <span>@(s.Branch ?? "no branch")</span>
+                        @if (s.EmitterKind != EmitterKind.Unknown)
+                        {
+                            <span>@EmitterLabel(s.EmitterKind)</span>
+                        }
+                        <span>last activity @Ago(s.LastSeen)</span>
+                        <button class="btn btn-sm basic-more" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Full breakdown →</button>
+                    </div>
+                }
                 @if (_viewMode != ViewMode.Basic)
                 {
                 <div class="maturity-timeline" title="@s.Turns turn@(s.Turns == 1 ? "" : "s") in this session">
@@ -172,7 +267,7 @@
                         <span class="percentile-label">@((int)(q.PercentileRank.Value * 100))th pct vs @q.HistoryCount @(s.Repository != null ? "repo " : "")sessions</span>
                     </div>
                 }
-                @{ var worst = WorstComponent(q); }
+                var worst = WorstComponent(q);
                 @if (worst is not null)
                 {
                     <div class="worst-factor">
@@ -512,13 +607,14 @@
             @if (_showChat)
             {
                 <div class="modal-backdrop" @onclick="() => _showChat = false">
-                    <div class="chat-window" @onclick:stopPropagation="true">
+                    <div class="chat-window" role="dialog" aria-modal="true" aria-label="Conversation transcript, read only"
+                         tabindex="-1" @ref="_chatWindowRef" @onkeydown="OnChatKeyDown" @onclick:stopPropagation="true">
                         <div class="chat-head">
                             <div>
                                 <div class="panel-label">Conversation — read only</div>
                                 <div class="chat-head-sub">@s.Id</div>
                             </div>
-                            <button class="btn" @onclick="() => _showChat = false">Close ✕</button>
+                            <button class="btn" aria-label="Close conversation" @onclick="() => _showChat = false">Close ✕</button>
                         </div>
                         <div class="chat-scroll" @ref="_chatScrollRef">
                             @foreach (var entry in _detail.Transcript)
