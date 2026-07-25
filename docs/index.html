@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CopilotScope — Observability for GitHub Copilot</title>
+<title>CopilotScope — Quality scoring for AI coding-assistant sessions</title>
 <meta name="description" content="OpenTelemetry-powered observability for GitHub Copilot sessions. Real-time quality scores, turn-level friction analysis, and token economics — from one OTLP endpoint.">
 <style>
 /* ── tokens ─────────────────────────────────────────────────────────────── */
@@ -364,9 +364,11 @@ footer{
 
   <h1>Copilot<span class="brand-accent">Scope</span></h1>
   <p class="hero-sub">
-    <strong>Observability for GitHub Copilot chat sessions.</strong>
-    Real-time quality scores, turn-level friction analysis, and token
-    economics — powered by OpenTelemetry, zero external services required.
+    <strong>Quality scoring for AI coding-assistant sessions.</strong>
+    Copilot, Claude Code and Cursor already emit OpenTelemetry. Point them here and
+    get more than a token counter: a session quality score, the turn where the
+    conversation stalled, and whether the accepted edits survived. Runs on your
+    machine — no SDK, no account, nothing leaves the box.
   </p>
   <div class="hero-actions">
     <a href="#quickstart" class="btn btn-primary">→ Get Started</a>

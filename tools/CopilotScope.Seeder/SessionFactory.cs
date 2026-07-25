@@ -189,10 +189,17 @@ public static class SessionFactory
         }
 
         // The last two turns of a "frustrated" persona carry recognizable rephrasing +
-        // strong-marker language so FrustrationAnalyzer actually flags them.
+        // strong-marker language so FrustrationAnalyzer actually flags them. Index by
+        // position *within the final pair*, not by absolute turn number: the old
+        // Math.Min(turnIndex, …) form landed on the mild corrective pair for short
+        // sessions, which the analyzer only scores as "mild friction" — the persona
+        // then produced no strong-marker or rephrasing signal at all.
+        // turnCount is stable per session but varies between them, so the dataset
+        // still shows both flavours.
         if (persona.Frustrated && turnIndex >= turnCount - 2)
         {
-            var pick = Fixtures.FrustratedTurns[Math.Min(turnIndex, Fixtures.FrustratedTurns.Length - 1)];
+            var pairStart = turnCount % 2 == 0 ? 0 : 2;   // 0–1 strong markers, 2–3 rephrasing
+            var pick = Fixtures.FrustratedTurns[pairStart + (turnIndex - (turnCount - 2))];
             return (pick.Prompt, pick.Response);
         }
 

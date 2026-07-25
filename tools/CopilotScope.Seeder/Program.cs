@@ -6,7 +6,7 @@
 // duplicates or leaves stale sessions behind.
 //
 //   dotnet run --project tools/CopilotScope.Seeder -- [profile] [collectorUrl]
-//     profile:      quick (~7 sessions incl. showcase, for local first-run) | demo (default: a big varied set incl. showcase chats)
+//     profile:      quick (~12 sessions incl. showcase + curated chats, for local first-run) | demo (default: a big varied set incl. showcase chats)
 //     collectorUrl: default http://localhost:4318
 //
 //   Optional flags (any position): --days N (demo spread window, default 14)

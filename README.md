@@ -6,35 +6,77 @@
 [![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=e0a458)](https://github.com/konradcinkusz/copilotscope/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilotscope/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilotscope?style=social)](https://github.com/konradcinkusz/copilotscope/stargazers)
-[![Windows 10+](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows&logoColor=white)](https://github.com/konradcinkusz/copilotscope#quick-start--no-clone-just-pull)
+[![CI](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-Observability for **GitHub Copilot** chat sessions: an OpenTelemetry collector, a
-Postgres store and a Blazor dashboard with a real-time session quality score —
-orchestrated with **.NET Aspire**.
+**Quality scoring for AI coding-assistant sessions.**
 
-**Fastest setup:** `source ./scripts/setup.sh --copilot-cli` (or `.\scripts\setup.ps1 -CopilotCli`
-on Windows) starts the stack, configures a client, and smoke-tests the pipeline
-in one command — see **docs/TUTORIAL.md §0**.
+Your Copilot, Claude Code and Cursor already emit OpenTelemetry. Point them at
+CopilotScope and you get more than a token counter: a composite quality score
+per session, the turn where the conversation stalled, whether the accepted edits
+actually survived, and what the repair loop cost. Runs on your machine; no SDK,
+no account, no data leaving the box.
 
+Everyone else counts **usage**. CopilotScope scores **quality** — and exports
+that score to Prometheus and Grafana if you already run them.
+
+![CopilotScope sessions view](docs/img/dashboard-sessions.png)
+
+```bash
+curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up
+# dashboard on http://localhost:5200 · point your assistant at http://localhost:4318
 ```
-                          ┌───────────────── .NET Aspire AppHost ─────────────────┐
-VS Code / Copilot CLI     │  Collector :4318 ──▶ Postgres (container + volume)    │
-    ──OTLP/HTTP──────────▶│   (ingest + API) ◀── Dashboard (Blazor Server)        │
-                          │                      pgAdmin (browse the data)        │
-                          └───────────────────────────────────────────────────────┘
-```
+
+No clone, no .NET, no login — the images are public on GHCR. Full walkthrough for
+every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
+
+## What it measures that a usage dashboard doesn't
+
+| Signal | Question it answers |
+|---|---|
+| Composite score 0–100 + confidence | Was this session any good — and is there enough telemetry to trust the number? |
+| **TFRA** turn analysis | *Which turn* went wrong, and why: LLM/tool errors, latency vs this session's own median, repair loops |
+| **Edit survival** | Did the accepted AI code stay in the file, or get reverted right after |
+| Latency utility | How much of the session sat past the 2 s attention / 8 s abandonment thresholds |
+| Token & cache economics | Cost per turn, cost per *accepted* edit, what the prompt cache actually saved |
+| Frustration signals | Rephrasing, corrective replies and strong markers — report-only, never scored |
+
+Four assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
+Code and Cursor** (`Domain/Sem.cs` normalizes each dialect onto one namespace).
+
+## How *not* to use CopilotScope
+
+This matters as much as the features, so it is not buried at the bottom:
+
+- **Not for performance reviews.** The score grades a *session*, not a person.
+  Ranking developers by it is a misuse the design does not support — there is no
+  per-developer view, and adding one is not on the roadmap.
+- **Acceptance rate is not a target.** Push on it and you reward accepting bad
+  suggestions. That is exactly why acceptance is only 0.20 of the composite and
+  is paired with *edit survival* — the counter-metric that catches code accepted
+  and then reverted.
+- **A single number is not a verdict.** Confidence is exported next to every
+  score; a 90 built on four samples means less than a 70 built on forty. Read the
+  components, not the headline.
+- **Frustration analysis is report-only** and deliberately excluded from the
+  composite. It is a lexical heuristic, and heuristics about human emotion do not
+  belong in a number someone might act on.
+
+The useful question is "where is our AI tooling wasting people's time", not "who
+is the best developer". Goodhart's law applies to this repo too.
 
 ## Projects
 
 | Project | Role | NuGet deps |
 |---|---|---|
 | `src/CopilotScope.AppHost` | Aspire orchestration: Postgres + pgAdmin containers, wiring | Aspire.Hosting.* 9.3 |
-| `src/CopilotScope.Collector` | OTLP/HTTP ingest (in-repo protobuf decoder), session aggregation, quality scoring, turn analysis, API, persistence | Npgsql only |
+| `src/CopilotScope.Collector` | OTLP/HTTP ingest (in-repo protobuf decoder), session aggregation, quality scoring, turn analysis, REST API, Prometheus exporter, persistence | Npgsql only |
 | `src/CopilotScope.Dashboard` | Blazor Server UI: sessions, quality VU-meter, turn analysis, prompt transcript, delete | **zero** |
 | `tests/CopilotScope.Tests` | xUnit unit tests (decoder, routing, quality, turns, persistence roundtrip) | xunit |
 | `tools/CopilotScope.TelemetryGen` | realistic demo telemetry generator (incl. gzip + captured content) | zero |
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
+| `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 
 ## Quick start — no clone, just pull
 
@@ -50,13 +92,13 @@ curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-One-time setup after the first workflow run: GHCR packages start private —
-switch each package to **public** (GitHub → Packages → package → Settings)
-so anonymous `docker pull` works.
+Both images are public — no login, no token, no clone.
 
 ## Quick start — from source
 
-Requirements: .NET 8 SDK + Docker. No workloads — Aspire 9 comes via NuGet.
+Requirements: .NET 9 SDK + Docker. No workloads — Aspire 9 comes via NuGet.
+(Everything targets `net8.0`; the 9.0 SDK is what builds the AppHost without
+`dotnet workload install aspire`.)
 
 ```bash
 dotnet run --project src/CopilotScope.AppHost
@@ -185,6 +227,7 @@ Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/I
 | Dev (Aspire) | `dotnet run --project src/CopilotScope.AppHost` | postgres, pgadmin |
 | Compose | `docker compose up --build` | postgres, collector, dashboard |
 | **GHCR (durable)** | see "Quick start — no clone, just pull" above | postgres, collector, dashboard |
+| **With Grafana** | `docker compose -f docker-compose.grafana.yml up` | + prometheus, grafana |
 | Azure Container Apps | `infra/main.bicep` | collector (+ your PG) |
 
 In Production mode `/v1/*` requires `x-api-key` (`CopilotScope__Ingest__ApiKey`);
@@ -200,6 +243,68 @@ clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 | `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions |
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
 | `GET /api/health` | health incl. persistence status |
+| `GET /metrics` | Prometheus scrape endpoint — see below |
+
+## Prometheus & Grafana
+
+Already running an observability stack? The collector exposes its **derived**
+signals — not just raw usage — on `GET /metrics` in the Prometheus text format.
+Plenty of exporters will tell you how many tokens you burned;
+`copilotscope_quality_*` is the part nothing else exports.
+
+```bash
+docker compose -f docker-compose.grafana.yml up
+# Grafana http://localhost:3000 — datasource and dashboard already provisioned
+```
+
+![CopilotScope Grafana dashboard](docs/img/grafana-quality.png)
+
+| Metric | What it carries |
+|---|---|
+| `copilotscope_quality_score_sum` / `_count` | composite score; divide for the mean over any label set |
+| `copilotscope_quality_confidence_sum` | how much telemetry the score rests on |
+| `copilotscope_quality_component_sum` / `_count` | `component=` reliability, acceptance, friction, latency, feedback, efficiency |
+| `copilotscope_edit_survival_sum` / `_count` | did accepted edits stay in the file |
+| `copilotscope_ttft_seconds` | `aggregate=` p50, p95 |
+| `copilotscope_tokens_total`, `copilotscope_cost_usd_total` | `type=`, `model=` |
+| `copilotscope_calls_total`, `copilotscope_call_errors_total` | `kind=` chat, tool |
+| `copilotscope_edits_total`, `copilotscope_feedback_total` | `outcome=`, `vote=` |
+| `copilotscope_sessions` | `grade=` excellent … critical |
+
+Everything carries an `emitter` label (`vscode`, `cli`, `claude_code`, `cursor`),
+so a regression in one assistant is visible instead of averaged away.
+
+Scores are exported as `_sum`/`_count` pairs rather than pre-averaged gauges, so
+PromQL keeps the arithmetic honest across any grouping:
+
+```promql
+sum by (emitter) (copilotscope_quality_score_sum)
+  / sum by (emitter) (copilotscope_quality_score_count)
+```
+
+**Cardinality.** Aggregate series only, by default. Per-session series carry an
+unbounded `session` label, so they are opt-in and capped — the most recent
+sessions win and `copilotscope_session_series_dropped` reports the remainder:
+
+```jsonc
+"CopilotScope": {
+  "Prometheus": {
+    "Enabled": true,
+    "PerSession": false,      // adds session= label; off by default
+    "MaxSessionSeries": 200,
+    "MaxErrorTypes": 30
+  }
+}
+```
+
+When `CopilotScope__Ingest__ApiKey` is set, `/metrics` requires it too (Prometheus
+sends it as `authorization: Bearer`, see `grafana/prometheus.yml`) — with
+per-session series enabled the endpoint exposes session ids, so it must not be
+more open than the data it summarizes.
+
+Note this is *not* the same feature as `CopilotScope__Forwarding__*`, which
+relays raw OTLP to an upstream backend. Forwarding ships the telemetry;
+`/metrics` ships the conclusions.
 
 ## Dashboard pages
 
@@ -208,6 +313,9 @@ clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 - **Overview** (`/overview`) — everything you burned across all chats: total
   input/output/cache tokens, tokens per day, calls per model, top sessions by
   token burn, average quality.
+
+  ![CopilotScope overview](docs/img/dashboard-overview.png)
+
 - **Docs** (`/docs`) — built-in deep documentation: what every tile and score
   component means, the rationale (and honest objections) behind each insight
   algorithm, content-capture semantics and known limitations.

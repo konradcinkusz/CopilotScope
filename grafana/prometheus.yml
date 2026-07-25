@@ -1,0 +1,19 @@
+# Scrapes the CopilotScope collector's /metrics endpoint.
+#
+# The collector in docker-compose.grafana.yml runs with an ingest API key, and
+# /metrics is guarded by that same key (with per-session series enabled it
+# exposes session ids, so it must not be more open than the data it summarizes).
+# Prometheus sends it as a bearer token; the collector accepts either that or
+# the x-api-key header.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: copilotscope
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials: dev-secret-123
+    static_configs:
+      - targets: ['collector:4318']

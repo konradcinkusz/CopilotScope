@@ -6,9 +6,14 @@ Thank you for your interest in CopilotScope! This document describes how to set 
 
 | Tool | Version | Notes |
 |---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/8.0) | 8.0+ | `dotnet --version` to verify |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/9.0) | 9.0 | `dotnet --version` to verify |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any recent | needed for Postgres + pgAdmin containers via Aspire |
-| [.NET Aspire workload](https://learn.microsoft.com/en-us/dotnet/aspire/fundamentals/setup-tooling) | 9.3 | `dotnet workload install aspire` |
+
+Everything targets `net8.0`, but build with the **9.0 SDK**: it resolves Aspire 9 from
+plain NuGet packages, so no `dotnet workload install aspire` is needed. On the 8.0 SDK
+the AppHost project fails with `NETSDK1147: the following workloads must be installed:
+aspire` — the collector, dashboard, tools and tests still build there, only the AppHost
+does not.
 
 ## Quick dev loop
 
@@ -31,7 +36,7 @@ dotnet run --project tools/CopilotScope.TelemetryGen
 
 # or seed a whole dataset straight into the running collector (always clears
 # previously seeded data first, so this is safe to re-run at any time):
-dotnet run --project tools/CopilotScope.Seeder -- quick   # ~7 sessions incl. showcase, fast
+dotnet run --project tools/CopilotScope.Seeder -- quick   # ~12 sessions incl. showcase + curated chats, fast
 dotnet run --project tools/CopilotScope.Seeder -- demo    # big varied set incl. showcase chats, for demos
 ```
 
@@ -59,11 +64,11 @@ tools/
 
 ## Submitting changes
 
-1. **Fork** the repository and create a feature branch from `main`.
+1. **Fork** the repository and create a feature branch from `master` (the default branch).
 2. Keep changes focused — one logical change per PR.
 3. Add or update tests for any new logic in `CopilotScope.Collector`.
-4. Run `dotnet test` and `dotnet build` before pushing.
-5. Open a pull request against `main`. The PR description should explain *why* the change is needed, not just what it does.
+4. Run `dotnet test` and `dotnet build` before pushing. CI runs both on every PR.
+5. Open a pull request against `master`. The PR description should explain *why* the change is needed, not just what it does.
 
 ## Architecture notes
 
@@ -82,4 +87,4 @@ tools/
 
 ## Questions / ideas
 
-Open a [GitHub Discussion](https://github.com/konradcinkusz/copilotscope/discussions) for design questions or feature proposals before writing a large PR. Bug reports go to [Issues](https://github.com/konradcinkusz/copilotscope/issues).
+Open an [Issue](https://github.com/konradcinkusz/copilotscope/issues) for bugs, and for design questions or feature proposals — please raise one before writing a large PR, so we can agree on the approach first.
