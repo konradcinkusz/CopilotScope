@@ -31,8 +31,8 @@ dotnet run --project tools/CopilotScope.TelemetryGen
 
 # or seed a whole dataset straight into the running collector (always clears
 # previously seeded data first, so this is safe to re-run at any time):
-dotnet run --project tools/CopilotScope.Seeder -- quick   # ~6 sessions, fast
-dotnet run --project tools/CopilotScope.Seeder -- demo    # big varied set, for demos
+dotnet run --project tools/CopilotScope.Seeder -- quick   # ~7 sessions incl. showcase, fast
+dotnet run --project tools/CopilotScope.Seeder -- demo    # big varied set incl. showcase chats, for demos
 ```
 
 ## Running tests
