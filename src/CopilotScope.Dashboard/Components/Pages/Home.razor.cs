@@ -1,5 +1,7 @@
+using System.Text.Json;
 using CopilotScope.Dashboard.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 
 namespace CopilotScope.Dashboard.Components.Pages;
@@ -19,10 +21,22 @@ public partial class Home : ComponentBase, IDisposable
     private bool _showAllTurns;
     private bool _chatWasOpen;
     private bool _repoNormalization = true;
+    private string _filter = string.Empty;
     private ElementReference _chatScrollRef;
+    private ElementReference _chatWindowRef;
 
     private enum ViewMode { Basic, Advanced, Full }
     private ViewMode _viewMode = ViewMode.Advanced;
+
+    /// <summary>Sessions after the rail's free-text filter (id, repo or branch, case-insensitive).</summary>
+    private List<SessionSummaryDto> FilteredSessions =>
+        _sessions is null ? []
+        : string.IsNullOrWhiteSpace(_filter) ? _sessions
+        : _sessions.Where(s =>
+              s.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+              || (s.Repository?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+              || (s.Branch?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false))
+          .ToList();
 
     private bool ShowTile(string key, SessionSummaryDto s) => _viewMode switch
     {
@@ -79,15 +93,77 @@ public partial class Home : ComponentBase, IDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // localStorage is only reachable once the circuit is live, so preferences load after
+        // the first render rather than in OnInitializedAsync (which also runs during prerender).
+        if (firstRender)
+        {
+            await LoadPrefsAsync();
+            StateHasChanged();
+        }
+
         if (_showChat && !_chatWasOpen)
         {
             _chatWasOpen = true;
             await JS.InvokeVoidAsync("scrollToBottom", _chatScrollRef);
+            await JS.InvokeVoidAsync("focusElement", _chatWindowRef); // so Escape reaches the dialog
         }
         else if (!_showChat)
         {
             _chatWasOpen = false;
         }
+    }
+
+    private void OnChatKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _showChat = false;
+    }
+
+    private sealed record Prefs(string ViewMode, bool ShowInternal, bool RepoNormalization);
+
+    private static readonly JsonSerializerOptions PrefsJson = new(JsonSerializerDefaults.Web);
+
+    private async Task LoadPrefsAsync()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("scopePrefs.load");
+            if (string.IsNullOrWhiteSpace(json)) return;
+
+            var p = JsonSerializer.Deserialize<Prefs>(json, PrefsJson);
+            if (p is null) return;
+
+            if (Enum.TryParse<ViewMode>(p.ViewMode, out var mode)) _viewMode = mode;
+            _repoNormalization = p.RepoNormalization;
+            if (p.ShowInternal != _showInternal)
+            {
+                _showInternal = p.ShowInternal;
+                await RefreshAsync();
+            }
+        }
+        catch { /* corrupt or unavailable storage — keep defaults */ }
+    }
+
+    private async Task SavePrefsAsync()
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(
+                new Prefs(_viewMode.ToString(), _showInternal, _repoNormalization), PrefsJson);
+            await JS.InvokeVoidAsync("scopePrefs.save", json);
+        }
+        catch { /* storage unavailable — preferences just won't persist */ }
+    }
+
+    private async Task SetViewModeAsync(ViewMode mode)
+    {
+        _viewMode = mode;
+        await SavePrefsAsync();
+    }
+
+    private async Task SetRepoNormalizationAsync(bool value)
+    {
+        _repoNormalization = value;
+        await SavePrefsAsync();
     }
 
     private async Task PollAsync()
@@ -126,6 +202,7 @@ public partial class Home : ComponentBase, IDisposable
     private async Task ToggleShowInternalAsync(bool value)
     {
         _showInternal = value;
+        await SavePrefsAsync();
         await RefreshAsync();
     }
 
@@ -216,10 +293,56 @@ public partial class Home : ComponentBase, IDisposable
     private static string Ago(DateTimeOffset t)
     {
         var d = DateTimeOffset.UtcNow - t;
-        return d.TotalSeconds < 60 ? $"{d.TotalSeconds:0} s temu"
-             : d.TotalMinutes < 60 ? $"{d.TotalMinutes:0} min temu"
-             : $"{d.TotalHours:0} h temu";
+        // Clock skew between emitter and collector can put LastSeen slightly in the future;
+        // "-207s ago" is never useful, so anything not yet in the past reads as "just now".
+        return d <= TimeSpan.Zero ? "just now"
+             : d.TotalSeconds < 60 ? $"{d.TotalSeconds:0}s ago"
+             : d.TotalMinutes < 60 ? $"{d.TotalMinutes:0}m ago"
+             : d.TotalHours   < 24 ? $"{d.TotalHours:0}h ago"
+             : $"{d.TotalDays:0}d ago";
     }
+
+    /// <summary>Wall-clock span the session covered, from first to last telemetry.</summary>
+    private static string Duration(SessionSummaryDto s)
+    {
+        var d = s.LastSeen - s.FirstSeen;
+        if (d <= TimeSpan.Zero) return "—";
+        return d.TotalMinutes < 1 ? $"{d.TotalSeconds:0}s"
+             : d.TotalHours   < 1 ? $"{d.TotalMinutes:0}m"
+             : $"{(int)d.TotalHours}h {d.Minutes}m";
+    }
+
+    /// <summary>Plain-language read of the score for the Basic view — the "so what" a number alone
+    /// doesn't give you. Flags low confidence, because a grade off two data points isn't a verdict.</summary>
+    private static string BasicVerdict(QualityReportDto q)
+    {
+        var verdict = q.Grade switch
+        {
+            "excellent" => "Smooth session — few errors, quick responses, little rework.",
+            "good"      => "Healthy session with only minor friction.",
+            "fair"      => "Usable, but friction was noticeable — worth a look at the weak factor below.",
+            "poor"      => "Rough session: errors, retries or long waits took over.",
+            _           => "This session struggled — most quality signals came back weak.",
+        };
+        return q.Confidence < 0.5
+            ? verdict + " Confidence is low, so treat the score as provisional until more telemetry lands."
+            : verdict;
+    }
+
+    /// <summary>Traffic-light dot for a grade label (Basic verdict line).</summary>
+    private static string GradeDotClass(string grade) => grade switch
+    {
+        "excellent" or "good" => "good",
+        "fair" => "warn",
+        _ => "bad"
+    };
+
+    /// <summary>The component carrying the session — highest scoring one that actually reported in.
+    /// Mirrors <see cref="WorstComponent"/> so Basic can show both sides of the story.</summary>
+    private static QualityComponentDto? BestComponent(QualityReportDto q) =>
+        q.Components.Where(c => c.Samples > 0)
+                    .OrderByDescending(c => c.Value)
+                    .FirstOrDefault(c => c.Value >= 0.7);
 
     // CLI-like = no editor signals (edit acceptance, thumbs, LOC) in telemetry
     private static bool IsCli(SessionSummaryDto s) =>

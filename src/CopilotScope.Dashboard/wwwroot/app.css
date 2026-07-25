@@ -32,7 +32,16 @@ html, body {
 
 .topbar {
   display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px 12px;
   padding: 14px 22px; border-bottom: 1px solid var(--line);
+}
+@media (max-width: 640px) {
+  .topbar { padding: 12px 16px; }
+  .nav { margin-left: 0; }
+  .grid, .overview-main, .doc { padding-left: 16px; padding-right: 16px; }
+  /* stop the score and its qualifier from splitting across lines mid-phrase */
+  .panel-head { flex-direction: column; align-items: flex-start; }
+  .vu-score small { display: block; margin-top: 2px; }
 }
 
 .brand { font-family: var(--mono); font-size: 18px; font-weight: 600; margin: 0; letter-spacing: .5px; }
@@ -50,8 +59,31 @@ html, body {
 
 /* -------------------------------------------------------------------- rail */
 
-.rail { display: flex; flex-direction: column; gap: 8px; }
+.rail { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .rail-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rail-count { font-style: normal; color: var(--copper); }
+
+.rail-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+
+/* The session list scrolls on its own so the detail pane stays put on desktop; on narrow
+   screens the rail is just another stacked block and scrolls with the page. */
+@media (min-width: 901px) {
+  .rail { position: sticky; top: 16px; max-height: calc(100vh - 32px); }
+  .rail-list { overflow-y: auto; padding-right: 4px; }
+}
+/* Stacked layout: cap the list so the session detail stays reachable without
+   scrolling past every session first. */
+@media (max-width: 900px) {
+  .rail-list { max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+}
+
+.rail-search input {
+  width: 100%; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 12px; padding: 7px 10px;
+}
+.rail-search input::placeholder { color: var(--dim); }
+.rail-search input:focus-visible { outline: 2px solid var(--copper); outline-offset: 1px; border-color: var(--copper); }
 
 .rail-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .toggle-internal { display: flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: normal; font-size: 10px; cursor: pointer; }
@@ -209,7 +241,7 @@ html, body {
 .feed { max-height: 320px; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
 .feed-row { display: flex; gap: 12px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
 .feed-time { color: var(--dim); flex-shrink: 0; }
-.feed-kind { width: 64px; flex-shrink: 0; color: var(--copper); }
+.feed-kind { width: 96px; flex-shrink: 0; color: var(--copper); overflow: hidden; text-overflow: ellipsis; }
 .kind-chat .feed-kind { color: #8fb8e8; }
 .kind-tool .feed-kind { color: var(--ok); }
 .kind-event .feed-kind { color: var(--copper); }
@@ -218,7 +250,9 @@ html, body {
 /* ------------------------------------------------------------------- misc */
 
 .empty { color: var(--dim); font-size: 12px; padding: 10px; }
-.empty.big { padding: 60px 20px; text-align: center; font-size: 14px; }
+.empty.big { padding: 60px 20px; text-align: center; font-size: 13px; line-height: 1.6; max-width: 520px; margin: 0 auto; }
+.empty.big b { color: var(--copper); font-weight: 600; }
+.empty-title { font-family: var(--mono); font-size: 15px; color: var(--text); margin-bottom: 8px; }
 .empty code { display: block; margin-top: 8px; color: var(--copper); font-family: var(--mono); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -284,6 +318,63 @@ html, body {
   background: color-mix(in srgb, var(--copper) 10%, var(--panel-2));
 }
 .view-btn:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+/* --------------------------------------------------------------- basic view */
+/* Basic answers three questions without scrolling: how good was it, what drove that,
+   and how big was it. Everything else lives behind the Advanced toggle. */
+
+.basic-meter { margin: 18px 0 4px; }
+
+.basic-track {
+  position: relative; height: 14px; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); overflow: hidden;
+}
+/* fill inherits its colour from the grade-* class, same palette as the score */
+.basic-fill {
+  position: absolute; inset: 0 auto 0 0;
+  background: currentColor; border-radius: 6px 0 0 6px;
+  transition: width .5s ease;
+}
+.basic-zone-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink); opacity: .55; z-index: 1; }
+
+.basic-zones { display: flex; margin-top: 4px; font-family: var(--mono); font-size: 9px;
+  text-transform: uppercase; letter-spacing: .8px; color: var(--dim); }
+.basic-zones span { text-align: center; }
+
+.basic-verdict {
+  display: flex; align-items: baseline; gap: 2px;
+  font-size: 13px; line-height: 1.5; color: var(--text); margin: 14px 0 0;
+}
+
+.basic-drivers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 14px; }
+.basic-driver { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.basic-driver-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-family: var(--mono); }
+.basic-driver-head b { color: var(--text); font-weight: 600; }
+
+.basic-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.basic-stat { display: flex; flex-direction: column; gap: 2px; }
+.basic-stat b { font-family: var(--mono); font-size: 19px; font-weight: 600; }
+.basic-stat b i { font-style: normal; color: var(--err); font-size: 12px; }
+.basic-stat span { font-size: 11px; color: var(--dim); }
+
+.basic-context {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  margin-top: 14px; font-family: var(--mono); font-size: 11px; color: var(--dim);
+}
+.basic-context > span:not(:last-of-type)::after { content: "·"; margin-left: 10px; opacity: .5; }
+.basic-more { margin-left: auto; }
+
+/* driver bars carry the same traffic-light colour as their dot, so the card reads
+   as one signal rather than a green label above an amber bar */
+.basic-driver .bar span { background: var(--dim); }
+.basic-driver.d-good .bar span { background: var(--ok); }
+.basic-driver.d-warn .bar span { background: var(--copper); }
+.basic-driver.d-bad  .bar span { background: var(--err); }
+
+@media (prefers-reduced-motion: reduce) { .basic-fill { transition: none; } }
 
 /* -------------------------------------------------- percentile / history bar */
 
