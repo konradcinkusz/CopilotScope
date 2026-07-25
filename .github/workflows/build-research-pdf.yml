@@ -32,6 +32,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: CopilotScope_Quality_Framework
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: CopilotScope_Quality_Framework.pdf
