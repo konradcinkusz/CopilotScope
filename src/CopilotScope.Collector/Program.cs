@@ -20,6 +20,14 @@ builder.Services.AddSingleton<IInsightAnalyzer, LatencyUtilityAnalyzer>();
 builder.Services.AddSingleton<IInsightAnalyzer, TokenEconomicsAnalyzer>();
 builder.Services.AddSingleton<IInsightAnalyzer, FrustrationAnalyzer>();
 builder.Services.AddSingleton<InsightPipeline>();
+
+// Prometheus scrape endpoint — exports the *computed* quality signals, whereas
+// OtlpForwarder relays raw OTLP upstream. Complementary, not alternatives.
+var prometheusOptions = new PrometheusOptions();
+builder.Configuration.GetSection("CopilotScope:Prometheus").Bind(prometheusOptions);
+builder.Services.AddSingleton(prometheusOptions);
+builder.Services.AddSingleton<PrometheusExporter>();
+
 builder.Services.AddSingleton<OtlpForwarder>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OtlpForwarder>());
 
@@ -258,13 +266,38 @@ api.MapGet("/health", () => Results.Ok(new
     sessions = store.All.Count,
     persistence = persistenceEnabled,
     forwarding = forwarder.Enabled,
+    prometheus = prometheusOptions.Enabled,
     environment = app.Environment.EnvironmentName
 }));
+
+// -------------------------------------------------------------- Prometheus
+// Scrape endpoint for teams that already run Prometheus/Grafana. Shares the
+// ingest key when one is configured: with PerSession enabled this exposes
+// session ids, so it must not be more open than the data it summarizes.
+
+if (prometheusOptions.Enabled)
+{
+    var exporter = app.Services.GetRequiredService<PrometheusExporter>();
+
+    app.MapGet("/metrics", (HttpRequest request) =>
+    {
+        if (!string.IsNullOrEmpty(ingestApiKey))
+        {
+            var provided = request.Headers["x-api-key"].FirstOrDefault()
+                        ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
+            if (provided != ingestApiKey) return Results.Unauthorized();
+        }
+
+        // version=0.0.4 is what Prometheus negotiates for the text exposition format.
+        return Results.Text(exporter.Render(), "text/plain; version=0.0.4; charset=utf-8");
+    });
+}
 
 app.MapGet("/", () => Results.Text(
     "CopilotScope collector.\n" +
     "OTLP ingest: POST /v1/traces | /v1/metrics | /v1/logs\n" +
     "API: GET /api/sessions | /api/sessions/{id} | /api/health | POST /api/admin/seed\n" +
+    "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
 app.Logger.LogInformation(
@@ -272,6 +305,7 @@ app.Logger.LogInformation(
     CopilotScope collector started ({Env}).
       OTLP/HTTP ingest : POST /v1/traces | /v1/metrics | /v1/logs
       Query API        : GET /api/sessions
+      Prometheus       : {Prom}
       Ingest auth      : {Auth}
       Persistence      : {Persist}
       Forwarding       : {Fwd}
@@ -280,6 +314,9 @@ app.Logger.LogInformation(
       "github.copilot.chat.otel.otlpEndpoint": "<this host>"
     """,
     app.Environment.EnvironmentName,
+    prometheusOptions.Enabled
+        ? $"GET /metrics (per-session series: {(prometheusOptions.PerSession ? "on" : "off")})"
+        : "disabled",
     string.IsNullOrEmpty(ingestApiKey) ? "disabled (dev)" : "x-api-key required",
     persistenceEnabled ? "Postgres" : "in-memory only",
     forwarder.Enabled ? "enabled" : "disabled");

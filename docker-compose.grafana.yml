@@ -1,0 +1,92 @@
+# CopilotScope + Prometheus + Grafana — everything provisioned, nothing to click.
+#
+#   docker compose -f docker-compose.grafana.yml up
+#
+# Grafana:    http://localhost:3000  (dashboard auto-loaded)
+#
+# Local-demo posture: Grafana runs with anonymous Admin and no login form so the
+# dashboard is one command away. Do not expose this compose file's ports beyond
+# localhost — for anything shared, drop the GF_AUTH_ANONYMOUS_* lines and set a
+# real admin password.
+# Dashboard:  http://localhost:5200
+# Prometheus: http://localhost:9090
+# OTLP ingest: http://localhost:4318 (x-api-key: dev-secret-123)
+#
+# The collector's /metrics endpoint exports the *computed* signals — composite
+# quality score, its components, edit survival, friction, cost. That is the part
+# no other exporter has; raw OTLP relaying upstream is a separate feature
+# (CopilotScope__Forwarding__*), not a substitute for this.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: copilotdb
+      POSTGRES_USER: copilot
+      POSTGRES_PASSWORD: copilot-dev
+    volumes:
+      - copilotscope-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U copilot -d copilotdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  collector:
+    image: ghcr.io/konradcinkusz/copilotscope-collector:latest
+    ports:
+      - "4318:4318"
+    environment:
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=copilot-dev"
+      CopilotScope__Ingest__ApiKey: "dev-secret-123"
+      # Per-session series are opt-in because session ids are unbounded. 200 is the
+      # default ceiling; the newest sessions win and the rest are dropped rather
+      # than handing Prometheus an ever-growing set of time series.
+      CopilotScope__Prometheus__PerSession: "true"
+      CopilotScope__Prometheus__MaxSessionSeries: "200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    image: ghcr.io/konradcinkusz/copilotscope-dashboard:latest
+    ports:
+      - "5200:8080"
+    environment:
+      Collector__BaseUrl: "http://collector:4318"
+    depends_on:
+      - collector
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - copilotscope-promdata:/prometheus
+    depends_on:
+      - collector
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - copilotscope-grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  copilotscope-pgdata:
+  copilotscope-promdata:
+  copilotscope-grafanadata:

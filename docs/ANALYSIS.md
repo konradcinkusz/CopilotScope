@@ -1,5 +1,26 @@
 # CopilotScope — analiza: obserwowalność sesji GitHub Copilot przez OpenTelemetry
 
+> **This document is in Polish.** It is the project's design-rationale record, kept
+> in the language it was thought through in. Section guide for English readers:
+>
+> | § | Contents |
+> |---|---|
+> | 1 | Is this feasible — the Copilot OTel settings and env vars that turn export on |
+> | 2 | Which signals Copilot actually emits (spans, metrics, log events) |
+> | 3 | Two architectures: local Aspire orchestration + optional cloud forward, vs. telemetry straight to the cloud — with a comparison table |
+> | 4 | Data flow and real-time quality evaluation; the 0–100 weighted model |
+> | 5 | Technical decisions (in-repo protobuf decoder, no OTel SDK, write batching) |
+> | 6 | Known limitations |
+> | 7 | Which Copilot surfaces support this telemetry |
+> | 8 | Survey of 10 approaches to scoring chat-session quality, each with its objections |
+> | 8a | Implementation matrix — what is built, what needs the cloud judge agent |
+> | 8b | Session Quality component reference (engine v2) |
+>
+> The **README** carries the same conclusions in English at a shallower depth, and
+> the dashboard's built-in `/docs` page explains every tile and score component.
+> The formal treatment, with the mathematics, is the research paper attached to
+> each release.
+
 ## 1. Czy to wykonalne?
 
 **Tak, oba warianty.** Copilot Chat w VS Code ma natywny eksport OpenTelemetry (traces, metrics, log events) zgodny z konwencjami semantycznymi OTel GenAI. Włącza się go w settings.json:

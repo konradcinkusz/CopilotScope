@@ -1,0 +1,422 @@
+{
+  "uid": "copilotscope-quality",
+  "title": "CopilotScope — AI session quality",
+  "description": "Quality, friction and cost of AI coding-assistant sessions, scraped from the CopilotScope collector's /metrics endpoint.",
+  "tags": ["copilotscope", "ai", "quality", "opentelemetry"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "emitter",
+        "label": "Assistant",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+        "query": "label_values(copilotscope_quality_score_count, emitter)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Mean session quality",
+      "description": "Composite score 0–100. Exported as _sum/_count so this average stays correct over any label subset.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 40 },
+              { "color": "yellow", "value": 55 },
+              { "color": "green", "value": 70 },
+              { "color": "super-light-green", "value": 85 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(copilotscope_quality_score_sum{emitter=~\"$emitter\"}) / clamp_min(sum(copilotscope_quality_score_count{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "mean score"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Mean confidence",
+      "description": "Data coverage × sample ramp. A high score with low confidence is a score built on thin telemetry.",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.4 },
+              { "color": "green", "value": 0.7 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(copilotscope_quality_confidence_sum{emitter=~\"$emitter\"}) / clamp_min(sum(copilotscope_quality_score_count{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "confidence"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Edit survival",
+      "description": "Did accepted AI edits stay in the file, or get reverted shortly after. Blank when no edit telemetry has arrived.",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 0.75 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(copilotscope_edit_survival_sum{emitter=~\"$emitter\"}) / clamp_min(sum(copilotscope_edit_survival_count{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "survival"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Estimated spend",
+      "description": "List-price estimate from CopilotScope:Pricing — for relative comparison, not billing.",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(copilotscope_cost_usd_total{emitter=~\"$emitter\"})",
+          "legendFormat": "estimated"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Quality components",
+      "description": "The six weighted inputs to the composite score. Reliability 0.25 · acceptance 0.20 · friction 0.20 · latency 0.15 · feedback 0.10 · efficiency 0.10.",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 0.75 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "instant": true,
+          "expr": "sum by (component) (copilotscope_quality_component_sum{emitter=~\"$emitter\"}) / clamp_min(sum by (component) (copilotscope_quality_component_count{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "{{component}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Mean quality over time, by assistant",
+      "description": "Whether sessions are getting better or worse — split by emitter, so a regression in one tool is visible instead of averaged away.",
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (emitter) (copilotscope_quality_score_sum{emitter=~\"$emitter\"}) / clamp_min(sum by (emitter) (copilotscope_quality_score_count{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "{{emitter}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Error rate",
+      "description": "Failed calls as a share of all calls, split into LLM errors and tool errors.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (kind) (copilotscope_call_errors_total{emitter=~\"$emitter\"}) / clamp_min(sum by (kind) (copilotscope_calls_total{emitter=~\"$emitter\"}), 1)",
+          "legendFormat": "{{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Time to first token",
+      "description": "Median across sessions of each session's TTFT percentile. Past ~2 s attention degrades; past ~8 s sessions get abandoned.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 2 },
+              { "color": "red", "value": 8 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "avg by (aggregate) (copilotscope_ttft_seconds{emitter=~\"$emitter\"})",
+          "legendFormat": "{{aggregate}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "piechart",
+      "title": "Sessions by grade",
+      "description": "≥85 excellent · ≥70 good · ≥55 fair · ≥40 poor · below that critical.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "instant": true,
+          "expr": "sum by (grade) (copilotscope_sessions{emitter=~\"$emitter\"})",
+          "legendFormat": "{{grade}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Token burn",
+      "description": "Input, output and cache tokens. A high cache_read share means context is being reused rather than re-sent.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 20, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (type) (copilotscope_tokens_total{emitter=~\"$emitter\"})",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Estimated spend by model",
+      "description": "List-price estimate per model from the configurable price sheet.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 20, "showPoints": "never", "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (model) (copilotscope_cost_usd_total{emitter=~\"$emitter\"})",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Edit outcomes and feedback",
+      "description": "Accepted vs rejected AI edits, and explicit thumbs. Acceptance alone is not a goal to maximize — read it next to edit survival.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "copilotscope-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (outcome) (copilotscope_edits_total{emitter=~\"$emitter\"})",
+          "legendFormat": "edits {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum by (vote) (copilotscope_feedback_total{emitter=~\"$emitter\"})",
+          "legendFormat": "thumbs {{vote}}"
+        }
+      ]
+    }
+  ]
+}

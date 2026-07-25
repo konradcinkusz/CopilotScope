@@ -1,0 +1,70 @@
+name: Bug report
+description: Telemetry not arriving, a score that looks wrong, a crash.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: `GET /api/health` on the collector tells you whether ingest,
+        persistence and forwarding are alive. `docs/TUTORIAL.md` has a
+        troubleshooting section per Copilot surface.
+
+  - type: dropdown
+    id: emitter
+    attributes:
+      label: Which assistant emitted the telemetry?
+      options:
+        - VS Code Copilot Chat
+        - Copilot CLI
+        - Claude Code
+        - Cursor
+        - Seeded / generated data (no real assistant)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - docker compose (GHCR images)
+        - docker compose -f docker-compose.grafana.yml
+        - docker compose up --build (from source)
+        - dotnet run --project src/CopilotScope.AppHost (Aspire)
+        - Azure Container Apps
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Collector logs / relevant output
+      description: >
+        Redact anything sensitive first — with content capture enabled, prompts and
+        responses may appear in logs and in the session snapshot.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "v1.0.7, or a commit sha"

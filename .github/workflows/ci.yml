@@ -1,0 +1,37 @@
+# Builds the solution and runs the test suite on every pull request and on
+# pushes to master. Tests need neither Docker nor a live collector, so this is
+# a plain restore/build/test with no services.
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The 9.0 SDK builds the AppHost without the Aspire workload (Aspire 9 ships
+      # as plain NuGet packages there); the 8.0 entry brings the runtime the
+      # net8.0 test host needs.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Restore
+        run: dotnet restore CopilotScope.sln
+
+      - name: Build
+        run: dotnet build CopilotScope.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test CopilotScope.sln --configuration Release --no-build --verbosity normal

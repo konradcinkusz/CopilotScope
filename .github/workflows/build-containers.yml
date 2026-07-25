@@ -8,9 +8,9 @@
 # (e.g. v1.0) and latest. The workflow_dispatch trigger allows a manual re-run
 # from the Actions tab without pushing a new tag.
 #
-# Note: packages published by a workflow are private by default — flip them to
-# public once in GitHub → Packages → <package> → Settings → Change visibility,
-# so users can `docker pull` without authentication.
+# Note: both packages are already public. This only matters if a *new* package
+# name is ever added here — GHCR publishes it private by default, so flip it in
+# GitHub → Packages → <package> → Settings → Change visibility.
 name: build containers
 
 on:

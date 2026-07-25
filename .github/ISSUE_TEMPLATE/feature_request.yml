@@ -1,0 +1,46 @@
+name: Feature request or design question
+description: A new analyzer, a new emitter, a metric that should exist.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Raise this before writing a large PR so we can agree on the approach first.
+
+        Worth knowing up front: CopilotScope scores **sessions**, not people. Proposals
+        that add per-developer ranking, or that turn acceptance rate into a target, are
+        out of scope by design — see "How *not* to use CopilotScope" in the README.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What question can't you answer today?
+      description: The measurement problem, not the implementation you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you add or change?
+      description: >
+        New analyzers are one `IInsightAnalyzer` class plus one DI registration
+        (`src/CopilotScope.Collector/Quality/Insights.cs`) — no UI work needed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: signals
+    attributes:
+      label: Which telemetry would it need?
+      description: >
+        Does the assistant actually emit it today? A metric nothing sends is a
+        wish, not a feature.
+
+  - type: textarea
+    id: objections
+    attributes:
+      label: What's the strongest argument against it?
+      description: >
+        Every analyzer in `docs/ANALYSIS.md` ships with its own objections. Yours
+        should too — it makes the proposal easier to accept, not harder.
