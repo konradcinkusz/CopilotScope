@@ -23,6 +23,10 @@
 .PARAMETER CaptureContent
     Also request prompt/response content capture (sensitive!). Default: off.
 
+.PARAMETER Traces
+    Claude Code only: also export the beta trace spans, the one source of
+    time-to-first-token for Claude sessions. Beta — the schema may change.
+
 .PARAMETER Endpoint
     OTLP endpoint of the CopilotScope collector. Default: http://localhost:4318
 
@@ -63,6 +67,7 @@ param(
     [switch] $CopilotCli,
     [switch] $ClaudeCode,
     [switch] $CaptureContent,
+    [switch] $Traces,
     [string] $Endpoint = 'http://localhost:4318',
     [string] $ApiKey,
     [switch] $Persist,
@@ -145,6 +150,7 @@ if ($CopilotCli) {
 if ($ClaudeCode) {
     $claudeArgs = @('-Endpoint', $Endpoint)
     if ($CaptureContent) { $claudeArgs += '-CaptureContent' }
+    if ($Traces) { $claudeArgs += '-Traces' }
     if ($ApiKey) { $claudeArgs += @('-ApiKey', $ApiKey) }
     if ($Persist) { $claudeArgs += '-Persist' }
     & (Join-Path $PSScriptRoot 'Enable-ClaudeCodeOtel.ps1') @claudeArgs

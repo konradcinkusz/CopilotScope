@@ -84,6 +84,14 @@ public sealed class SessionStore
                     RegisterResource(fp, conv, span.Resource);
             }
 
+        // Claude events always name their session; Claude metrics only do so while
+        // OTEL_METRICS_INCLUDE_SESSION_ID is on. Registering the events' identity claims
+        // whatever the metrics dropped into the "unattributed" bucket for that emitter.
+        foreach (var log in batch.Logs)
+            if (ClaudeCode.SessionKey(log.EventName, log.Attributes) is { } claudeSession
+                && ResourceFingerprint(log.Resource) is { } fp)
+                RegisterResource(fp, claudeSession, log.Resource);
+
         foreach (var span in batch.Spans) IngestSpan(span, touched);
         foreach (var point in batch.Metrics) IngestMetric(point, touched);
         foreach (var log in batch.Logs) IngestLog(log, touched);
@@ -101,13 +109,13 @@ public sealed class SessionStore
         touched.Add(session.Id);
         session.AddSpan(span);
 
-        var op = span.Attr(Sem.Operation) ?? Classify(span.Name);
+        var op = span.Attr(Sem.Operation) ?? ClaudeCode.Operation(span.Name) ?? Classify(span.Name);
         var isError = span.StatusCode == 2 || span.Attr(Sem.ErrorType) is not null;
         var errorType = span.Attr(Sem.ErrorType);
 
         session.Apply(s =>
         {
-            if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(span.Resource);
+            if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(span.Resource, span.Name, span.Attributes);
             if (span.Attr(Sem.AgentName) is { } agent) s.AgentName = agent;
             if (span.Attr(Sem.GitRepository) is { } repo) s.Repository = repo;
             if (span.Attr(Sem.GitBranch) is { } branch) s.Branch = branch;
@@ -187,6 +195,8 @@ public sealed class SessionStore
                     }
                     break;
             }
+
+            ClaudeCode.ApplySpanExtras(s, span, turn);
         });
 
         session.AddEvent(new SessionEvent(span.Start, op,
@@ -212,11 +222,14 @@ public sealed class SessionStore
 
     private void IngestMetric(OtlpMetricPoint point, HashSet<string> touched)
     {
-        var session = Resolve(SessionKeyFor(point.Attributes, point.Resource), point.Resource);
+        var session = Resolve(SessionKeyFor(point.MetricName, point.Attributes, point.Resource), point.Resource);
         touched.Add(session.Id);
 
         session.Apply(s =>
         {
+            if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(point.Resource, point.MetricName, point.Attributes);
+            if (ClaudeCode.TryApplyMetric(s, point)) return;
+
             switch (Sem.Normalize(point.MetricName))
             {
                 case Sem.MEditAcceptance:
@@ -270,16 +283,19 @@ public sealed class SessionStore
 
     private void IngestLog(OtlpLogEvent log, HashSet<string> touched)
     {
-        string? key = SessionKeyFor(log.Attributes, log.Resource);
+        string? key = SessionKeyFor(log.EventName, log.Attributes, log.Resource);
         if (key is null && log.TraceId is not null && _traceToSession.TryGetValue(log.TraceId, out var mapped))
             key = mapped;
 
         var session = Resolve(key, log.Resource);
         touched.Add(session.Id);
 
-        var name = log.EventName ?? log.Body ?? "log";
+        var name = ClaudeCode.Describe(log) ?? log.EventName ?? log.Body ?? "log";
         session.Apply(s =>
         {
+            if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(log.Resource, log.EventName, log.Attributes);
+            if (ClaudeCode.TryApplyLog(s, log)) return;
+
             switch (log.EventName is null ? null : Sem.Normalize(log.EventName))
             {
                 case Sem.EUserFeedback:
@@ -320,11 +336,14 @@ public sealed class SessionStore
 
     private string? SessionKeyFor(OtlpSpan span) =>
         span.Attr(Sem.ConversationId)
+        ?? ClaudeCode.SessionKey(span.Name, span.Attributes)
         ?? (span.TraceId.Length > 0 && _traceToSession.TryGetValue(span.TraceId, out var mapped) ? mapped : null)
         ?? ResourceFallback(span.Resource);
 
-    private string? SessionKeyFor(Dictionary<string, AttrValue> attrs, Dictionary<string, AttrValue> resource) =>
-        (attrs.TryGetValue(Sem.ConversationId, out var c) ? c.ToString() : null) ?? ResourceFallback(resource);
+    private string? SessionKeyFor(string? signalName, Dictionary<string, AttrValue> attrs, Dictionary<string, AttrValue> resource) =>
+        (attrs.TryGetValue(Sem.ConversationId, out var c) ? c.ToString() : null)
+        ?? ClaudeCode.SessionKey(signalName, attrs)
+        ?? ResourceFallback(resource);
 
     /// <summary>
     /// Identity-less signals resolve through the fingerprint mapping to the most
@@ -348,12 +367,22 @@ public sealed class SessionStore
         return svc is not null ? $"svc:{svc}" : null;
     }
 
-    private static EmitterKind DetectEmitter(Dictionary<string, AttrValue> resource)
+    /// <param name="signalName">
+    /// Span, metric or event name the emitter is being detected from. Claude Code and Cowork
+    /// may ship a bare resource, in which case the claude_code.* namespace is the only thing
+    /// that identifies them.
+    /// </param>
+    /// <param name="attributes">Attributes of that same signal, read alongside the name.</param>
+    private static EmitterKind DetectEmitter(Dictionary<string, AttrValue> resource,
+        string? signalName = null, Dictionary<string, AttrValue>? attributes = null)
     {
         if (resource.ContainsKey(Sem.SessionId)) return EmitterKind.VSCode;
         if (resource.TryGetValue(Sem.ServiceName, out var svc))
         {
             var svcName = svc.ToString();
+            // Checked before claude-code: the desktop app's service name names both.
+            if (svcName.Contains(Sem.ServiceNameCowork, StringComparison.OrdinalIgnoreCase))
+                return EmitterKind.Cowork;
             if (svcName.Contains(Sem.ServiceNameClaudeCode, StringComparison.OrdinalIgnoreCase))
                 return EmitterKind.ClaudeCode;
             if (svcName.Contains(Sem.ServiceNameCursor, StringComparison.OrdinalIgnoreCase))
@@ -362,6 +391,7 @@ public sealed class SessionStore
         if (resource.TryGetValue(Sem.GenAiSystem, out var genAiSys) &&
             genAiSys.ToString().Contains("anthropic", StringComparison.OrdinalIgnoreCase))
             return EmitterKind.ClaudeCode;
+        if (ClaudeCode.Signal(signalName, attributes) is not null) return EmitterKind.ClaudeCode;
         if (resource.ContainsKey("process.pid")) return EmitterKind.CLI;
         return EmitterKind.Unknown;
     }
@@ -390,7 +420,8 @@ public sealed class SessionStore
         });
     }
 
-    private static void AddBounded(List<double> list, double value)
+    /// <summary>Appends to a bounded distribution list, keeping the most recent 1000 samples.</summary>
+    internal static void AddBounded(List<double> list, double value)
     {
         list.Add(value);
         if (list.Count > 1000) list.RemoveRange(0, list.Count - 1000);

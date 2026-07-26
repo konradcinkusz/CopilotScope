@@ -16,6 +16,11 @@ public static class Sem
     public const string ClaudeCodeSessionId = "claude_code.session_id";
     public const string GenAiSystem = "gen_ai.system";
 
+    // The gen_ai.* span vocabulary below is what VS Code, Copilot CLI and Cursor speak.
+    // Claude Code and Cowork do NOT: a default install emits metrics and log events in
+    // their own claude_code.* namespace and no spans at all. Domain/ClaudeCode.cs owns
+    // that dialect; Normalize() only folds the attribute-shaped names onto copilot_chat.*.
+
     // Span-level (gen_ai.*)
     public const string Operation = "gen_ai.operation.name";       // invoke_agent | chat | execute_tool | execute_hook
     public const string ConversationId = "gen_ai.conversation.id";
@@ -67,6 +72,7 @@ public static class Sem
 
     // Known service.name values used for emitter detection
     public const string ServiceNameClaudeCode = "claude-code";
+    public const string ServiceNameCowork = "cowork";
     public const string ServiceNameCursor = "cursor";
     public const string ServiceNameCopilot = "copilot-chat";
 

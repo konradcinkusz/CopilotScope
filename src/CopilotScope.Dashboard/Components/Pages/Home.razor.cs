@@ -41,7 +41,7 @@ public partial class Home : ComponentBase, IDisposable
     private bool ShowTile(string key, SessionSummaryDto s) => _viewMode switch
     {
         ViewMode.Basic => false,
-        ViewMode.Full  => key is not ("edits" or "thumbs" or "loc") || !IsCli(s),
+        ViewMode.Full  => key is not ("edits" or "thumbs" or "loc") || !IsCli(s) || HasEditorSignal(key, s),
         _ => key switch
         {
             "tokens_in"   => s.InputTokens > 0,
@@ -53,9 +53,9 @@ public partial class Home : ComponentBase, IDisposable
             "llm_calls"   => s.ChatCalls > 0,
             "tool_calls"  => true,
             "turns"       => true,
-            "edits"       => !IsCli(s) && s.EditsAccepted + s.EditsRejected > 0,
+            "edits"       => s.EditsAccepted + s.EditsRejected > 0,
             "thumbs"      => !IsCli(s) && s.ThumbsUp + s.ThumbsDown > 0,
-            "loc"         => !IsCli(s) && (s.LinesAdded > 0 || s.LinesRemoved > 0),
+            "loc"         => s.LinesAdded > 0 || s.LinesRemoved > 0,
             _             => true
         }
     };
@@ -346,13 +346,26 @@ public partial class Home : ComponentBase, IDisposable
 
     // CLI-like = no editor signals (edit acceptance, thumbs, LOC) in telemetry
     private static bool IsCli(SessionSummaryDto s) =>
-        s.EmitterKind is EmitterKind.CLI or EmitterKind.ClaudeCode or EmitterKind.Cursor;
+        s.EmitterKind is EmitterKind.CLI or EmitterKind.ClaudeCode or EmitterKind.Cursor or EmitterKind.Cowork;
+
+    /// <summary>
+    /// The Claude surfaces are CLI-shaped but do report edit decisions and lines of code
+    /// (claude_code.tool_decision / claude_code.lines_of_code.count), so those two tiles are
+    /// gated on the data actually being there rather than on the emitter.
+    /// </summary>
+    private static bool HasEditorSignal(string key, SessionSummaryDto s) => key switch
+    {
+        "edits" => s.EditsAccepted + s.EditsRejected > 0,
+        "loc" => s.LinesAdded > 0 || s.LinesRemoved > 0,
+        _ => false
+    };
 
     private static string EmitterLabel(EmitterKind k) => k switch
     {
         EmitterKind.VSCode => "VS Code",
         EmitterKind.CLI => "Copilot CLI",
         EmitterKind.ClaudeCode => "Claude Code",
+        EmitterKind.Cowork => "Cowork",
         EmitterKind.Cursor => "Cursor",
         _ => ""
     };

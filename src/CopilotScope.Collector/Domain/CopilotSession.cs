@@ -8,7 +8,8 @@ namespace CopilotScope.Collector.Domain;
 /// falling back to the VS Code window session.id). Thread-safe via its own lock;
 /// snapshots are taken for the API / SignalR layer.
 /// </summary>
-public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor }
+/// <summary>Appended to, never reordered — the value is persisted as an int in Postgres.</summary>
+public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor, Cowork }
 
 public sealed class CopilotSession
 {

@@ -16,6 +16,8 @@
 #   --copilot-cli                      Export GitHub Copilot CLI OTel env vars (needs: source)
 #   --claude-code                      Export Claude Code OTel env vars (needs: source)
 #   --capture-content                  Also request prompt/response content capture
+#   --traces                           Claude Code only: also export the beta trace spans,
+#                                       the one source of time-to-first-token (schema may change)
 #   --endpoint URL                     OTLP endpoint (default: http://localhost:4318)
 #   --api-key KEY                      x-api-key for ingest auth
 #                                       (default: dev-secret-123 in --mode compose, matching docker-compose.yml)
@@ -52,6 +54,7 @@ MODE="compose"
 COPILOT_CLI=""
 CLAUDE_CODE=""
 CAPTURE=""
+TRACES=""
 ENDPOINT="http://localhost:4318"
 API_KEY=""
 API_KEY_SET=""
@@ -71,6 +74,7 @@ while [[ $# -gt 0 ]]; do
         --copilot-cli)      COPILOT_CLI="true"; shift ;;
         --claude-code)      CLAUDE_CODE="true"; shift ;;
         --capture-content)  CAPTURE="true"; shift ;;
+        --traces)           TRACES="true"; shift ;;
         --endpoint)         ENDPOINT="$2"; shift 2 ;;
         --api-key)          API_KEY="$2"; API_KEY_SET="true"; shift 2 ;;
         --persist)          PERSIST="true"; shift ;;
@@ -228,18 +232,25 @@ fi
 if [ -n "$CLAUDE_CODE" ]; then
     claude_args=(--endpoint "$ENDPOINT")
     [ -n "$CAPTURE" ] && claude_args+=(--capture)
+    [ -n "$TRACES" ] && claude_args+=(--traces)
     [ -n "$API_KEY" ] && claude_args+=(--api-key "$API_KEY")
     source "$SCRIPT_DIR/Enable-ClaudeCodeOtel.sh" "${claude_args[@]}"
 
     if [ -n "$PERSIST" ]; then
         target_rc="${RC_FILE:-$(_default_rc_file)}"
         block=$(cat <<BLOCK
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_ENDPOINT="$ENDPOINT"
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf
-$( [ -n "$CAPTURE" ] && echo 'export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true' )
+export OTEL_METRIC_EXPORT_INTERVAL=10000
+export OTEL_LOGS_EXPORT_INTERVAL=5000
+export OTEL_RESOURCE_ATTRIBUTES=service.name=claude-code
+$( [ -n "$TRACES" ] && printf '%s\n' 'export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1' 'export OTEL_TRACES_EXPORTER=otlp' 'export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf' )
+$( [ -n "$CAPTURE" ] && printf '%s\n' 'export OTEL_LOG_USER_PROMPTS=1' 'export OTEL_LOG_ASSISTANT_RESPONSES=1' 'export OTEL_LOG_TOOL_DETAILS=1' )
 $( [ -n "$API_KEY" ] && echo "export OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=$API_KEY\"" )
 BLOCK
 )
