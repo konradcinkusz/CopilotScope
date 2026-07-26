@@ -42,8 +42,17 @@ every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
 | Token & cache economics | Cost per turn, cost per *accepted* edit, what the prompt cache actually saved |
 | Frustration signals | Rephrasing, corrective replies and strong markers — report-only, never scored |
 
-Four assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
-Code and Cursor** (`Domain/Sem.cs` normalizes each dialect onto one namespace).
+Five assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
+Code, Claude Cowork (the agent surface in the Claude desktop app) and Cursor**.
+`Domain/Sem.cs` normalizes the Copilot-family dialects onto one namespace;
+`Domain/ClaudeCode.cs` maps the Claude surfaces, which speak `claude_code.*`
+metrics and log events rather than `gen_ai.*` spans.
+
+Claude Code needs `CLAUDE_CODE_ENABLE_TELEMETRY=1` before anything at all is
+exported — `scripts/Enable-ClaudeCodeOtel.ps1` / `.sh` set it and the rest.
+Cowork is configured in the desktop app's own settings UI and wants the full
+`/v1/logs` path. Both are walked through in
+[docs/TUTORIAL.md](docs/TUTORIAL.md) §4.
 
 ## How *not* to use CopilotScope
 

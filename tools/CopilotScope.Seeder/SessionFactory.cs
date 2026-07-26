@@ -20,7 +20,7 @@ public static class SessionFactory
             Branch = Fixtures.Branches[rng.Next(Fixtures.Branches.Length)],
             // The showcase session is pinned to VS Code so every editor-only signal (edits,
             // thumbs, LOC) is present and its tiles render; other personas rotate emitters.
-            EmitterKind = persona.Showcase ? EmitterKind.VSCode : (EmitterKind)rng.Next(1, 5), // VSCode..Cursor — never Unknown
+            EmitterKind = persona.Showcase ? EmitterKind.VSCode : (EmitterKind)rng.Next(1, 6), // VSCode..Cowork — never Unknown
             FirstSeen = start,
         };
 

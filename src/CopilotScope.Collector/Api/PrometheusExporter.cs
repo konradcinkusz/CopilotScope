@@ -161,6 +161,7 @@ public sealed class PrometheusExporter(
         EmitterKind.VSCode => "vscode",
         EmitterKind.CLI => "cli",
         EmitterKind.ClaudeCode => "claude_code",
+        EmitterKind.Cowork => "cowork",
         EmitterKind.Cursor => "cursor",
         _ => "unknown"
     };
