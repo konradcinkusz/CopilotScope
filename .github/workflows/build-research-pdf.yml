@@ -20,7 +20,7 @@ jobs:
           working_directory: research/articles
       - name: Rename PDF
         run: mv research/articles/quality_measurement_framework.pdf CopilotScope_Quality_Framework.pdf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: CopilotScope_Quality_Framework
           path: CopilotScope_Quality_Framework.pdf
