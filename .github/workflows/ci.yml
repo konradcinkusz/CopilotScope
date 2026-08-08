@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The 9.0 SDK builds the AppHost without the Aspire workload (Aspire 9 ships
       # as plain NuGet packages there); the 8.0 entry brings the runtime the
