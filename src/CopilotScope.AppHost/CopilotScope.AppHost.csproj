@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
     <ProjectReference Include="..\CopilotScope.Dashboard\CopilotScope.Dashboard.csproj" />
+    <ProjectReference Include="..\CopilotScope.AgentForge\CopilotScope.AgentForge.csproj" />
   </ItemGroup>
 
 </Project>

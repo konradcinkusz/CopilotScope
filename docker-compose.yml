@@ -47,5 +47,23 @@ services:
       - collector
     restart: unless-stopped
 
+  # Opt-in, experimental — see docs/AGENTFORGE.md before enabling for a team. No cohorts are
+  # configured by default, so this serves no persona traffic until you edit appsettings.
+  agentforge:
+    build:
+      context: .
+      dockerfile: Dockerfile.agentforge
+    ports:
+      - "5300:8080"
+    environment:
+      CopilotScope__AgentForge__CollectorBaseUrl: "http://collector:4318"
+      # CopilotScope__AgentForge__Ingest__ApiKey: "dev-secret-123"
+      # CopilotScope__AgentForge__AzureAI__Endpoint: "https://<your-foundry-resource>.openai.azure.com"
+      # CopilotScope__AgentForge__AzureAI__DeploymentName: "<your-model-deployment>"
+      # CopilotScope__AgentForge__AzureAI__ApiKey: "<your-key>"   # omit to use DefaultAzureCredential
+    depends_on:
+      - collector
+    restart: unless-stopped
+
 volumes:
   copilotscope-pgdata:
