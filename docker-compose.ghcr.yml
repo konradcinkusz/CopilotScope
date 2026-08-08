@@ -40,5 +40,17 @@ services:
       - collector
     restart: unless-stopped
 
+  # Opt-in, experimental — see docs/AGENTFORGE.md before enabling for a team. No cohorts are
+  # configured by default, so this serves no persona traffic until you supply your own config.
+  agentforge:
+    image: ghcr.io/konradcinkusz/copilotscope-agentforge:latest
+    ports:
+      - "5300:8080"
+    environment:
+      CopilotScope__AgentForge__CollectorBaseUrl: "http://collector:4318"
+    depends_on:
+      - collector
+    restart: unless-stopped
+
 volumes:
   copilotscope-pgdata:

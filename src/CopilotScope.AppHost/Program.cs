@@ -29,4 +29,11 @@ builder.AddProject<Projects.CopilotScope_Dashboard>("dashboard")
     .WaitFor(collector)
     .WithExternalHttpEndpoints();
 
+// ---------------------------------------------------------------- agentforge
+// Opt-in, experimental — see docs/AGENTFORGE.md. No cohorts are configured by default.
+builder.AddProject<Projects.CopilotScope_AgentForge>("agentforge")
+    .WithReference(collector)
+    .WaitFor(collector)
+    .WithExternalHttpEndpoints();
+
 builder.Build().Run();
